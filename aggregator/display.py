@@ -1,6 +1,6 @@
 """Painel ao vivo no terminal do agregador: cada pesquisa vira um quadro com uma barra por mercado.
 
-As consultas rodam em threads diferentes; cada uma chama `evento()` quando conecta,
+As consultas rodam em threads diferentes; cada uma chama `event()` quando conecta,
 recebe a resposta, tenta de novo ou desiste. O painel (biblioteca Rich) redesenha
 as barras 12 vezes por segundo, então dá para VER a diferença entre os modos:
 
@@ -53,7 +53,7 @@ DISPLAY_MODE = os.environ.get("DISPLAY", "graphic")  # graphic | raw
 MODE_LABELS = {"sequential": "sequencial", "concurrent": "concorrente"}
 SOURCES = {"cliente_tcp": "cliente TCP"}
 MODE_COLOR = {"sequential": "dark_orange", "concurrent": "dodger_blue1"}
-BAR_WIDTH = 40  # máxima; num terminal estreito a barra encolhe (largura_barra)
+BAR_WIDTH = 40  # máxima; num terminal estreito a barra encolhe (bar_width)
 FIXED_COLUMNS = 86  # nome + situação + threads + bordas: o que sobra da largura do terminal vai para a barra
 MIN_SCALE_MS = 4000  # escala fixa mínima: quadros sequenciais e concorrentes ficam na mesma régua
 

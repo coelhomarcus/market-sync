@@ -161,7 +161,7 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
             self._no_requests.notify_all()
 
     def wait_for_requests(self, limit_s: float) -> bool:
-        """Espera os pedidos em andamento terminarem (até limite_s). True se todos terminaram."""
+        """Espera os pedidos em andamento terminarem (até limit_s). True se todos terminaram."""
         with self._no_requests:
             return self._no_requests.wait_for(lambda: self._in_progress == 0, timeout=limit_s)
 

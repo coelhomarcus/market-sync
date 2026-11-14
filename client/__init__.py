@@ -2,4 +2,4 @@
 
 from .connection import AggregatorClient
 
-__all__ = ["ClienteAgregador"]
+__all__ = ["AggregatorClient"]

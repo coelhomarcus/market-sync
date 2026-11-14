@@ -4,8 +4,8 @@ Abre UMA conexão TCP com o agregador (porta 5050) e a mantém aberta; cada
 pedido é uma linha JSON enviada e cada resposta uma linha JSON recebida
 (ver docs/protocolo.md, seção 2).
 
-    with ClienteAgregador() as c:
-        r = c.consultar("arroz", modo="concorrente")
+    with AggregatorClient() as c:
+        r = c.search("arroz", mode="concorrente")
 
 Usada pela interface de terminal (client/terminal.py) e pelos experimentos.
 """
