@@ -1,0 +1,10 @@
+# Python
+backend/.venv/
+__pycache__/
+.pytest_cache/
+backend/data/*.db
+
+# Front
+frontend/node_modules/
+frontend/dist/
+.claude/

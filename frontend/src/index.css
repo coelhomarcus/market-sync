@@ -1,0 +1,125 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-folha: #0d5c36;
+  --color-folha-escura: #08402a;
+  --color-folha-clara: #e3efe6;
+  --color-gema: #ffd23f;
+  --color-gema-clara: #fff4c7;
+  --color-papel: #f3f6f1;
+  --color-tinta: #15241b;
+  --color-cinza: #5b6a61;
+  --color-linha: #d9e2da;
+  --color-tomate: #d63a22;
+  --color-seq: #d9480f;
+  --color-conc: #1c7ed6;
+
+  --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    @apply bg-papel text-tinta font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-gema);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Etiqueta de gôndola: o recorte na ponta esquerda lembra o furo do preço de prateleira */
+.shelf-tag {
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes pulse-bar {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.bar-pending {
+  animation: pulse-bar 1s ease-in-out infinite;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.drawer-in {
+  animation: drawer-in 180ms ease-out;
+}
+
+/* Slider de latência: trilho desenhado por baixo, só o polegar é do input */
+.latency-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 20px;
+  cursor: pointer;
+}
+.latency-range:disabled {
+  cursor: not-allowed;
+}
+.latency-range::-webkit-slider-runnable-track {
+  height: 20px;
+  background: transparent;
+}
+.latency-range::-moz-range-track {
+  height: 20px;
+  background: transparent;
+}
+.latency-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--thumb, var(--color-folha));
+  box-shadow: 0 1px 3px rgb(21 36 27 / 0.25);
+}
+.latency-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--thumb, var(--color-folha));
+  box-shadow: 0 1px 3px rgb(21 36 27 / 0.25);
+}
+.latency-range:focus-visible {
+  outline: none;
+}
+.latency-range:focus-visible::-webkit-slider-thumb {
+  outline: 3px solid var(--color-gema);
+  outline-offset: 2px;
+}
