@@ -4,6 +4,7 @@ import { HistoryChart, MarketLatencyChart } from '../components/dashboard/Charts
 import { EventLog } from '../components/dashboard/EventLog'
 import { LastTimelines } from '../components/dashboard/LastTimelines'
 import { MarketsTable } from '../components/dashboard/MarketsTable'
+import { ResourcesPanel } from '../components/dashboard/Resources'
 import { Scoreboard } from '../components/dashboard/Scoreboard'
 import { Section } from '../components/dashboard/Section'
 import { api } from '../lib/api'
@@ -20,8 +21,10 @@ const NAV = [
   { id: 'resumo', label: 'Resumo' },
   { id: 'linha-do-tempo', label: 'Linha do tempo' },
   { id: 'historico', label: 'Histórico' },
+  { id: 'recursos', label: 'Recursos' },
   { id: 'mercados', label: 'Mercados' },
-  { id: 'benchmark', label: 'Benchmark e eventos' },
+  { id: 'benchmark', label: 'Benchmark' },
+  { id: 'eventos', label: 'Eventos' },
 ]
 
 export function Dashboard() {
@@ -115,6 +118,14 @@ export function Dashboard() {
         </Section>
 
         <Section
+          id="recursos"
+          title="Consumo de recursos"
+          description="Quanto processamento, quantas threads e quanta memória cada modo usa. Concorrência não faz o computador trabalhar menos: ela sobrepõe as esperas."
+        >
+          <ResourcesPanel records={filtered} markets={markets} />
+        </Section>
+
+        <Section
           id="mercados"
           title="Mercados"
           description="Cada mercado é um processo Python separado, com sua porta TCP e seu banco. Arraste a latência além do traço (3 s) para provocar timeout, ou tire um mercado do ar: a busca concorrente devolve o que os outros responderem."
@@ -124,13 +135,20 @@ export function Dashboard() {
 
         <Section
           id="benchmark"
-          title="Benchmark e eventos"
-          description="O benchmark repete a mesma busca nos dois modos, alternando a ordem; o log mostra cada passo das conexões assim que acontece."
+          title="Benchmark"
+          description="Repete a mesma busca nos dois modos, alternando a ordem a cada rodada, e resume tempo, CPU e threads."
         >
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+          <div className="max-w-2xl">
             <Benchmark />
-            <EventLog />
           </div>
+        </Section>
+
+        <Section
+          id="eventos"
+          title="Eventos ao vivo"
+          description="Cada requisição aparece assim que chega, com a linha do tempo das 5 conexões. Abra um cartão para ver os eventos TCP um a um."
+        >
+          <EventLog />
         </Section>
       </div>
     </main>

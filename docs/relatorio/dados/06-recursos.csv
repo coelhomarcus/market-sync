@@ -1,0 +1,9 @@
+cenario,modo,rodadas,tempo_ms,cpu_agregador_ms,cpu_mercados_ms,cpu_total_ms,ocupacao_pct,threads_extras
+"latências padrão, arroz",Sequencial,10,3799.9,21.6,19.7,41.3,1.1,0
+"latências padrão, arroz",Concorrente,10,1236.4,15.6,19.3,35.0,2.9,5
+"latências padrão, catálogo inteiro",Sequencial,5,4160.6,30.5,48.7,79.2,1.9,0
+"latências padrão, catálogo inteiro",Concorrente,5,1237.5,26.4,51.6,78.0,6.3,5
+"sem latência, arroz",Sequencial,20,6.4,1.1,4.3,5.4,84,0
+"sem latência, arroz",Concorrente,20,2.8,2.9,4.9,7.8,280,5
+"sem latência, catálogo inteiro",Sequencial,10,42.8,11.8,18.4,30.2,71,0
+"sem latência, catálogo inteiro",Concorrente,10,18.3,13.7,22.6,36.4,199,5

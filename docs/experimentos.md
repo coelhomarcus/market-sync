@@ -70,12 +70,33 @@ Previsto = cada consulta, na ordem de envio, vai para a primeira thread livre. N
 
 Trazer 300 vezes mais dados custa poucos milissegundos em `localhost`; com as latências padrão, a diferença some na variação.
 
+### E9 — Consumo de recursos (CPU, threads, memória)
+
+Cada mercado informa a CPU da thread que atendeu a consulta (`time.thread_time()`, sem contar o sleep da latência); o agregador mede a CPU do próprio processo com `psutil`, o pico de threads e a memória residente.
+
+| Cenário | Modo | Tempo | CPU agregador | CPU mercados | CPU total | Ocupação | Threads extras |
+|---|---|---|---|---|---|---|---|
+| Padrão, "arroz" (10) | Sequencial | 3,80 s | 21,6 ms | 19,7 ms | 41,3 ms | 1,1% | 0 |
+| | Concorrente | 1,24 s | 15,6 ms | 19,3 ms | 35,0 ms | 2,9% | 5 |
+| Padrão, catálogo (5) | Sequencial | 4,16 s | 30,5 ms | 48,7 ms | 79,2 ms | 1,9% | 0 |
+| | Concorrente | 1,24 s | 26,4 ms | 51,6 ms | 78,0 ms | 6,3% | 5 |
+| Sem latência, "arroz" (20) | Sequencial | 6,4 ms | 1,1 ms | 4,3 ms | 5,4 ms | 84% | 0 |
+| | Concorrente | 2,8 ms | 2,9 ms | 4,9 ms | 7,8 ms | 280% | 5 |
+| Sem latência, catálogo (10) | Sequencial | 42,8 ms | 11,8 ms | 18,4 ms | 30,2 ms | 71% | 0 |
+| | Concorrente | 18,3 ms | 13,7 ms | 22,6 ms | 36,4 ms | 199% | 5 |
+
+- Com espera de rede, a CPU dos mercados é a mesma nos dois modos; a do agregador parece maior no sequencial porque a janela de medição é 3× mais longa e inclui tarefas de fundo.
+- Sem espera, o concorrente gasta 20–43% mais CPU (criar threads, trocar de contexto), mas ocupa 2 a 2,8 núcleos ao mesmo tempo: é esse paralelismo que dá o ganho de ~2,3× sem latência.
+- Memória residente: cerca de 18 MB por processo de mercado e 30–50 MB no agregador.
+- Os tempos sem latência variam entre rodadas (E3: 17,7 ms; E9: 6,4 ms na busca "arroz") conforme a carga do computador; o speedup ficou em 2,3–2,4× nas duas.
+
 ## Discussão
 
 - O modelo de custo se confirmou: **sequencial ≈ soma, concorrente ≈ máximo**. O speedup máximo é `Σ lᵢ / max(lᵢ)`; com as latências padrão, 3,6 / 1,2 = 3,0 (medido: 3,1).
 - O GIL do Python não atrapalha aqui: enquanto uma thread espera em `recv()`, ela libera o GIL e as outras seguem. O trabalho pesado (SQLite, montar o JSON) acontece nos processos dos mercados, em paralelo de verdade.
 - Timeouts são essenciais na versão concorrente: sem eles, um único mercado travado seguraria a resposta inteira.
 - Com menos threads que mercados, as consultas esperam na fila do pool; o ganho máximo exige uma thread por mercado.
+- Concorrência não economiza CPU: o mesmo trabalho é feito, só que sobreposto. O custo extra é de threads (5 por requisição) e, sem espera de rede, de 20–43% de CPU.
 
 ## Ideias de experimentos adicionais
 

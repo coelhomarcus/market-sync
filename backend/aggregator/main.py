@@ -10,11 +10,13 @@ Rodar:  uvicorn aggregator.main:app --port 8000   (dentro de backend/)
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
+import psutil
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -62,6 +64,7 @@ class Aggregator:
         self.markets = markets
         self.bus = EventBus()
         self.metrics = MetricsStore()
+        self.proc = psutil.Process()
 
     def market(self, market_id: str) -> MarketInfo:
         for m in self.markets:
@@ -71,15 +74,35 @@ class Aggregator:
 
     def execute(self, mode: str, kind: str, payload: dict, query: str, source: str = "loja") -> tuple[list[MarketResult], float, dict]:
         request_id = uuid.uuid4().hex[:8]
+        threads_base = threading.active_count()
+        peak = [threads_base]
 
         def emit(type_: str, data: dict) -> None:
+            # cada evento sai da thread que fez a consulta: bom momento para medir o pico de threads
+            peak[0] = max(peak[0], threading.active_count())
             self.bus.publish(type_, {"request_id": request_id, "mode": mode, "kind": kind, **data})
 
         emit("request_start", {"query": query, "source": source, "markets": [m.id for m in self.markets]})
+        cpu0 = self.proc.cpu_times()
         t0 = time.perf_counter()
         results = strategies.run(mode, self.markets, payload, emit=emit, t0=t0)
         total_ms = (time.perf_counter() - t0) * 1000
-        record = self.metrics.record(mode=mode, kind=kind, query=query, total_ms=total_ms, results=results, source=source)
+        cpu1 = self.proc.cpu_times()
+        agg_cpu_ms = ((cpu1.user - cpu0.user) + (cpu1.system - cpu0.system)) * 1000
+        server_cpu_ms = sum(r.server_cpu_ms for r in results)
+        resources = {
+            "agg_cpu_ms": round(agg_cpu_ms, 2),  # CPU do processo agregador (todas as threads)
+            "server_cpu_ms": round(server_cpu_ms, 2),  # soma da CPU gasta nos 5 mercados
+            "cpu_ms": round(agg_cpu_ms + server_cpu_ms, 2),
+            "cpu_util": round((agg_cpu_ms + server_cpu_ms) / total_ms, 4) if total_ms else 0,
+            "threads_base": threads_base,
+            "threads_peak": peak[0],
+            "threads_extra": peak[0] - threads_base,
+            "rss_mb": round(self.proc.memory_info().rss / 1e6, 1),
+        }
+        record = self.metrics.record(
+            mode=mode, kind=kind, query=query, total_ms=total_ms, results=results, source=source, resources=resources
+        )
         record["request_id"] = request_id
         emit("request_end", {"total_ms": record["total_ms"], "ok_count": record["ok_count"], "error_count": record["error_count"], "record": record})
         return results, total_ms, record
@@ -329,6 +352,8 @@ def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
             "products": d["products"],
             "history_rows": d.get("history_rows", 0),
             "db_bytes": d.get("db_bytes", 0),
+            "cpu_s": d.get("cpu_s"),
+            "rss_bytes": d.get("rss_bytes"),
             "requests_served": d["requests_served"],
             "thread_count": d["thread_count"],
             "rtt_ms": r.duration_ms,

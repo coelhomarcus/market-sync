@@ -88,6 +88,22 @@ export function Benchmark() {
               ))}
             </tbody>
           </table>
+          {result.resources?.sequential && result.resources?.concurrent && (
+            <dl className="mt-3 grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-1 text-sm tabular-nums">
+              <dt className="text-cinza" />
+              <dd className="text-xs text-cinza">Sequencial</dd>
+              <dd className="text-xs text-cinza">Concorrente</dd>
+              <dt className="text-cinza">CPU por consulta</dt>
+              <dd>{num(result.resources.sequential.cpu_ms ?? 0, 1)} ms</dd>
+              <dd>{num(result.resources.concurrent.cpu_ms ?? 0, 1)} ms</dd>
+              <dt className="text-cinza">Ocupação da CPU</dt>
+              <dd>{num((result.resources.sequential.cpu_util ?? 0) * 100, 1)}%</dd>
+              <dd>{num((result.resources.concurrent.cpu_util ?? 0) * 100, 1)}%</dd>
+              <dt className="text-cinza">Threads extras</dt>
+              <dd>{num(result.resources.sequential.threads_extra ?? 0, 0)}</dd>
+              <dd>{num(result.resources.concurrent.threads_extra ?? 0, 0)}</dd>
+            </dl>
+          )}
           {result.speedup && (
             <p className="mt-3 rounded-lg bg-gema-clara px-3 py-2 text-sm">
               Speedup de <strong>{num(result.speedup, 2)}×</strong> com {result.runs} rodadas de “{result.query}”.

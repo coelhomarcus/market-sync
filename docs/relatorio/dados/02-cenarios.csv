@@ -1,0 +1,10 @@
+cenario,configuracao,rodadas,modo,media_ms,previsto_ms
+E1,latências padrão (300 a 1200 ms),10,Sequencial,3738.4,3600
+E1,latências padrão (300 a 1200 ms),10,Concorrente,1217.6,1200
+E2,5 × 800 ms,5,Sequencial,4099.5,4000
+E2,5 × 800 ms,5,Concorrente,870.8,800
+E3,5 × 0 ms,20,Sequencial,17.7,
+E3,5 × 0 ms,20,Concorrente,7.4,
+E4,Ipê com 4000 ms (timeout 3 s),3,Sequencial,5474.3,5400
+E4,Ipê com 4000 ms (timeout 3 s),3,Concorrente,3004.9,3000
+E5,Ipê fora do ar,5,Concorrente,911.5,900

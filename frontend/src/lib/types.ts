@@ -36,7 +36,19 @@ export interface MarketTiming {
   wait_ms: number
   bytes_sent: number
   bytes_received: number
+  server_cpu_ms: number
   thread: string
+}
+
+export interface Resources {
+  agg_cpu_ms: number
+  server_cpu_ms: number
+  cpu_ms: number
+  cpu_util: number
+  threads_base: number
+  threads_peak: number
+  threads_extra: number
+  rss_mb: number
 }
 
 export type Sort = 'destaques' | 'preco' | 'economia' | 'nome'
@@ -104,6 +116,7 @@ export interface MetricRecord {
   ok_count: number
   error_count: number
   markets: MarketTiming[]
+  resources?: Resources
   request_id?: string
 }
 
@@ -121,6 +134,7 @@ export interface BenchmarkResult {
   sequential: Stats
   concurrent: Stats
   speedup: number | null
+  resources?: Record<Mode, Partial<Resources> | undefined>
   samples: { mode: Mode; total_ms: number }[]
 }
 
@@ -135,6 +149,8 @@ export interface MarketStatus {
   products?: number
   history_rows?: number
   db_bytes?: number
+  cpu_s?: number
+  rss_bytes?: number
   requests_served?: number
   thread_count?: number
   rtt_ms: number

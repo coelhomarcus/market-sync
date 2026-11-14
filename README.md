@@ -44,7 +44,7 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 1. **Loja:** busque "arroz" no modo Sequencial e depois no Concorrente (alternador no topo). A faixa abaixo da busca mostra o tempo e as barras de cada conexão TCP: escada no sequencial, barras paralelas no concorrente.
 2. **Produto:** clique num produto para ver os mercados ordenados por preço e o selo "Menor preço".
 3. **Cesta:** adicione itens e clique em "Comparar cesta nos 5 mercados".
-4. **Painel ao vivo:** speedup médio, linha do tempo das últimas consultas, histórico, latência por mercado e o log de eventos TCP chegando por WebSocket.
+4. **Painel ao vivo:** speedup médio, linha do tempo das últimas consultas, histórico, latência por mercado, consumo de recursos (CPU, threads, memória) e as requisições chegando por WebSocket.
 5. **Falhas:** na seção "Mercados" do painel, tire um mercado do ar ou suba a latência acima de 3 s. A busca concorrente continua respondendo com os outros mercados.
 6. **Benchmark:** rode 5 ou 10 rodadas e exporte o CSV.
 7. **Prova de que é TCP de verdade:** `lsof -nP -iTCP:5001-5005 -sTCP:LISTEN` lista os 5 processos Python escutando.
@@ -55,7 +55,7 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 cd backend && .venv/bin/python -m pytest
 ```
 
-33 testes: framing do protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta, histórico), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, mercado fora do ar, conexão recusada, timeout, rotas da API e WebSocket.
+34 testes: framing do protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta, histórico), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, mercado fora do ar, conexão recusada, timeout, rotas da API, WebSocket e medição de recursos.
 
 ## Estrutura
 
@@ -84,6 +84,7 @@ docs/                       requisitos, casos de uso, arquitetura, protocolo, ex
 - [Arquitetura e modelo de threads](docs/arquitetura.md)
 - [Protocolo TCP](docs/protocolo.md)
 - [Experimentos de desempenho](docs/experimentos.md)
+- [Relatório técnico](docs/relatorio/) em DOCX, PDF e Markdown, com os dados de cada gráfico em `docs/relatorio/dados/`
 
 ## API
 

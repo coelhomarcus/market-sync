@@ -26,7 +26,7 @@ interface LiveState {
 
 const Ctx = createContext<LiveState | null>(null)
 const MAX_RECORDS = 600
-const MAX_LOG = 300
+const MAX_LOG = 1500
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false)

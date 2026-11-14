@@ -33,6 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import psutil  # noqa: E402
+
 from common.config import MARKET_HOST, MARKETS_BY_ID, MarketInfo  # noqa: E402
 from common.protocol import ProtocolError, recv_msg, send_msg  # noqa: E402
 from markets.catalog import normalize  # noqa: E402
@@ -65,6 +67,7 @@ class MarketServer:
         self._lock = threading.Lock()  # protege latency_ms / online / contadores
         self._sock: socket.socket | None = None
         self._stopping = threading.Event()
+        self._proc = psutil.Process()
 
         if not Path(self.db_path).exists():
             seed_market(market, Path(self.db_path))
@@ -129,10 +132,12 @@ class MarketServer:
                     log.info("offline: recusando %s de %s", cmd, addr)
                     return
 
+                cpu0 = time.thread_time()  # CPU desta thread (o sleep da latência não conta)
                 try:
                     response = {"ok": True, "data": self.dispatch(cmd, request)}
                 except Exception as exc:  # erro de aplicação vira resposta de erro
                     response = {"ok": False, "error": str(exc)}
+                response["cpu_ms"] = round((time.thread_time() - cpu0) * 1000, 3)
                 try:
                     send_msg(conn, response)
                 except OSError:
@@ -181,6 +186,8 @@ class MarketServer:
                 "products": self._products,
                 "history_rows": self._history_rows,
                 "db_bytes": Path(self.db_path).stat().st_size,
+                "cpu_s": round(sum(self._proc.cpu_times()[:2]), 3),
+                "rss_bytes": self._proc.memory_info().rss,
                 "requests_served": self.requests_served,
                 "thread_count": threading.active_count(),
             }

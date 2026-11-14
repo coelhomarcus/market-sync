@@ -82,3 +82,16 @@ def test_websocket_streams_events(client):
             types.append(ws.receive_json()["type"])
         assert types[0] == "request_start"
         assert types.count("market_response") == 5
+
+
+def test_resources_are_measured(client):
+    seq = client.get("/api/search/sequential?q=arroz")
+    conc = client.get("/api/search/concurrent?q=arroz")
+    assert seq.status_code == conc.status_code == 200
+    records = client.get("/api/metrics/history").json()["records"]
+    by_mode = {r["mode"]: r["resources"] for r in records}
+    assert by_mode["concurrent"]["threads_extra"] >= 5  # uma thread por mercado
+    assert by_mode["sequential"]["threads_extra"] <= 1  # a própria thread da rota
+    for res in by_mode.values():
+        assert res["server_cpu_ms"] > 0 and res["agg_cpu_ms"] >= 0 and res["rss_mb"] > 0
+    assert all(m["server_cpu_ms"] > 0 for r in records for m in r["markets"])

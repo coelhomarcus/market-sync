@@ -29,6 +29,7 @@ class MarketResult:
     wait_ms: float = 0.0  # do fim do envio até a resposta chegar
     bytes_sent: int = 0
     bytes_received: int = 0
+    server_cpu_ms: float = 0.0  # CPU que a thread do mercado gastou nesta requisição
     thread: str = ""
     extra: dict = field(default_factory=dict)
 
@@ -86,6 +87,7 @@ def query_market(
 
         if response is None:
             raise ConnectionError("o mercado encerrou a conexão sem responder (fora do ar?)")
+        result.server_cpu_ms = float(response.get("cpu_ms", 0.0))
         if not response.get("ok"):
             raise RuntimeError(response.get("error") or "erro desconhecido")
         result.ok = True

@@ -28,6 +28,7 @@
 | RF14 | Permitir alterar a latência simulada de cada mercado e tirá-lo do ar. | Comando `CONFIG`, seção "Mercados" do painel |
 | RF15 | Filtrar por categoria, ordenar (destaques, menor preço, maior diferença, nome) e paginar os resultados. | Parâmetros de `GET /api/search/{mode}` |
 | RF16 | Exibir o histórico de preço de um produto em cada mercado. | Comando `HISTORY`, `GET /api/history/{slug}` |
+| RF17 | Medir e comparar o consumo de recursos (CPU, threads, memória) dos dois modos. | Seção "Consumo de recursos" do painel, colunas de recursos no CSV |
 
 ## Requisitos não funcionais
 
@@ -41,7 +42,7 @@
 | RNF06 | Protocolo robusto a fragmentação do TCP. | Framing com prefixo de tamanho (`common/protocol.py`), testado com envio em pedaços de 7 bytes. |
 | RNF07 | Interface em português, utilizável em celular e acessível por teclado. | Layout responsivo, foco visível, rótulos ARIA. |
 | RNF08 | Reprodutibilidade dos dados. | `seed.py` usa semente fixa por mercado e data de referência fixa. |
-| RNF09 | Testabilidade. | 33 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |
+| RNF09 | Testabilidade. | 34 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |
 | RNF10 | Volume de dados realista. | 1.740 SKUs no catálogo, 7.692 produtos e 1,38 milhão de preços históricos nos 5 bancos (82 MB). |
 
 ## Casos de uso
