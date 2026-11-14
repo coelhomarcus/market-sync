@@ -4,7 +4,7 @@ Consulta os 5 supermercados ao mesmo tempo (uma thread por supermercado) e regis
 o tempo total, N vezes, com as latências padrão. Modelo: o tempo deve ficar perto da
 MAIOR latência. A análise também compara com o Experimento 1 (tabela, speedup e fig-08).
 
-Rodar sozinho:  .venv/bin/python -m experiments.exp2_concurrent   (com o start.py --silencioso no ar)
+Rodar sozinho:  .venv/bin/python -m experiments.exp2_concurrent   (com o start.py --quiet no ar)
 """
 
 from __future__ import annotations

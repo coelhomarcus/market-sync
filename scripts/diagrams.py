@@ -57,7 +57,7 @@ def architecture() -> None:
 
     # clientes
     box(ax, 0.4, 6.2, 2.7, 1.0, "Cliente de terminal", "python -m client", highlight=True)
-    box(ax, 0.4, 5.05, 2.7, 1.0, "Loja web", "busca, cesta, modo")
+    box(ax, 0.4, 5.05, 2.7, 1.0, "Clientes 2, 3, …", "uma conexão TCP cada")
 
     # terminal com o log
     ax.add_patch(FancyBboxPatch((0.4, 0.55), 2.7, 2.35, boxstyle="round,pad=0,rounding_size=0.12", fc="#1f2326", ec="#1f2326"))
@@ -71,7 +71,7 @@ def architecture() -> None:
 
     # agregador
     box(ax, 4.5, 6.3, 4.0, 0.85, "tcp_server.py · porta 5050", "uma thread por cliente", highlight=True)
-    box(ax, 4.5, 5.2, 4.0, 0.85, "api_web.py · porta 8000", "3 rotas HTTP da loja")
+    box(ax, 4.5, 5.2, 4.0, 0.85, "consolidation.py", "agrupa ofertas, ordena, menor preço")
     box(ax, 4.5, 4.25, 4.0, 0.8, "aggregator.py", "escolhe a estratégia e mede o tempo")
     box(ax, 4.5, 3.15, 1.9, 0.8, "sequential.py", "um por vez", highlight=True, size=10)
     box(ax, 6.6, 3.15, 1.9, 0.8, "concurrent.py", "5 threads", highlight=True, size=10)
@@ -87,10 +87,10 @@ def architecture() -> None:
 
     # setas
     arrow(ax, (3.1, 6.72), (4.5, 6.72), "TCP · JSON\npor linha", color=BLUE, text_color=BLUE, dy=0.08)
-    arrow(ax, (3.1, 5.6), (4.5, 5.6), "HTTP", dy=0.06)
+    arrow(ax, (3.1, 5.6), (4.5, 6.45), color=BLUE)
     ax.plot([8.5, 8.62, 8.62], [6.72, 6.72, 4.65], color=BLUE, lw=1.4)
     arrow(ax, (8.62, 4.65), (8.5, 4.65), color=BLUE)
-    arrow(ax, (6.5, 5.2), (6.5, 5.05))
+    arrow(ax, (6.5, 6.3), (6.5, 6.05))
     arrow(ax, (5.45, 4.25), (5.45, 3.95))
     arrow(ax, (7.55, 4.25), (7.55, 3.95))
     arrow(ax, (5.45, 3.15), (5.45, 2.85))
@@ -129,8 +129,8 @@ def use_cases() -> None:
     ax.text(2.85, 8.62, "Comparador de Preços", fontsize=11, fontweight="bold", color=GRAY, va="center")
 
     cases = ["UC01 Pesquisar produto", "UC02 Comparar preços de um produto", "UC03 Escolher o modo de consulta",
-             "UC04 Montar e comparar cesta", "UC05 Acompanhar as consultas no terminal", "UC06 Comparar modos / experimentos",
-             "UC07 Exportar resultados (CSV)", "UC08 Configurar ou derrubar mercado"]
+             "UC04 Comparar os modos (speedup)", "UC05 Acompanhar as consultas no terminal", "UC06 Rodar os experimentos",
+             "UC07 Configurar ou derrubar mercado", "UC08 Ver a situação dos mercados"]
     cx, w, h = 5.3, 4.6, 0.66
     ys = [8.0 - k * 0.98 for k in range(len(cases))]
     for name, y in zip(cases, ys):
@@ -140,16 +140,13 @@ def use_cases() -> None:
     ax.add_patch(Ellipse(uc9, 2.5, 1.15, fc=LIGHT_BLUE, ec=BLUE, lw=2))
     ax.text(*uc9, "UC09 Consultar\nmercados via TCP", ha="center", va="center", fontsize=11, fontweight="bold", color=TEXT_COLOR)
 
-    consumer, evaluator, service = (1.2, 6.6), (1.2, 2.6), (12.1, 4.6)
-    actor(ax, *consumer, "Consumidor")
-    actor(ax, *evaluator, "Avaliador /\nOperador")
+    user, service = (1.2, 4.6), (12.1, 4.6)
+    actor(ax, *user, "Usuário")
     actor(ax, *service, "Serviço de\nmercado")
 
     edge = cx - w / 2
-    for k in (0, 1, 2, 3):
-        ax.plot([consumer[0] + 0.35, edge], [consumer[1] + 0.2, ys[k]], color=LINE_COLOR, lw=1.3)
-    for k in (2, 4, 5, 6, 7):
-        ax.plot([evaluator[0] + 0.35, edge], [evaluator[1] + 0.2, ys[k]], color=LINE_COLOR, lw=1.3)
+    for y in ys:  # um ator só: o usuário do cliente de terminal tem acesso a todos os comandos
+        ax.plot([user[0] + 0.35, edge], [user[1] + 0.2, y], color=LINE_COLOR, lw=1.3)
     ax.plot([uc9[0] + 1.25, service[0] - 0.35], [uc9[1], service[1] + 0.2], color=LINE_COLOR, lw=1.3)
     for k in (0, 1, 3, 5):
         start = (cx + w / 2 - 0.05, ys[k])
@@ -171,7 +168,7 @@ def sequence() -> None:
             fontsize=14, fontweight="bold", color=TEXT_COLOR, va="center")
 
     actors = [("Usuário", 0.8, 1.2), ("Cliente\n(python -m client)", 2.6, 1.6), ("Agregador\n(thread do cliente)", 4.8, 1.8),
-              ("Threads de consulta\n(ThreadPoolExecutor)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("Max\n:5004", 10.9, 1.1),
+              ("Threads de consulta\n(ThreadPoolExecutor)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("SuperVila\n:5002", 10.9, 1.3),
               ("Ipê\n:5005", 12.6, 1.1)]
     x = {name.split("\n")[0]: px for name, px, _ in actors}
     top, base = 10.3, 0.3
@@ -217,24 +214,24 @@ def sequence() -> None:
     y0 = y - 0.25
     frame_box(5.9, 13.3, y0, 4.5, "par", "as 5 consultas acontecem ao mesmo tempo")
     y -= 0.85
-    for target in ("Aurora", "Max", "Ipê"):
+    for target in ("Aurora", "SuperVila", "Ipê"):
         message_arrow("Threads de consulta", target, y, "", color=BLUE)
     ax.text(x["Threads de consulta"] + 0.15, y + 0.06, '{"cmd":"SEARCH","q":"arroz"}\\n', fontsize=8, color=BLUE, va="bottom",
             family=["Menlo", "DejaVu Sans Mono"])
-    ax.text(13.2, y0 - 0.16, "SuperVila e Empório Sol: igual, omitidos", fontsize=7.5, color=GRAY, ha="right", va="center")
+    ax.text(13.2, y0 - 0.16, "Empório Sol e Max: igual, omitidos", fontsize=7.5, color=GRAY, ha="right", va="center")
     activation(x["Aurora"], y, y - 0.9)
-    activation(x["Max"], y, y - 1.6)
-    activation(x["Ipê"], y, y - 0.5)
+    activation(x["Ipê"], y, y - 1.6)
+    activation(x["SuperVila"], y, y - 0.5)
     message_arrow("Aurora", "Threads de consulta", y - 0.9, '{"ok":true,"data":{"items":[…]}}', is_return=True, size=8)
     ax.text(x["Aurora"] + 0.15, y - 0.9, "~300 ms", fontsize=8, color=GRAY, va="center")
-    message_arrow("Max", "Threads de consulta", y - 1.6, "itens", is_return=True, size=8)
-    ax.text(x["Max"] + 0.15, y - 1.6, "~900 ms", fontsize=8, color=GRAY, va="center")
-    # Ipê fora do ar
+    message_arrow("Ipê", "Threads de consulta", y - 1.6, "itens", is_return=True, size=8)
+    ax.text(x["Ipê"] + 0.15, y - 1.6, "~1200 ms", fontsize=8, color=GRAY, va="center")
+    # SuperVila fora do ar
     yi = y - 0.5
-    ax.text(x["Ipê"], yi - 0.05, "✕ fecha sem responder", fontsize=8, color=RED, ha="center", va="top")
+    ax.text(x["SuperVila"], yi - 0.05, "✕ fecha sem responder", fontsize=8, color=RED, ha="center", va="top")
     yr = y - 2.2
-    message_arrow("Threads de consulta", "Ipê", yr, "nova tentativa após 0,5 s → 1 s → 2 s (4 no total)", color=RED, size=8)
-    note(x["Ipê"] - 0.2, yr - 0.45, "fora do ar: 4 tentativas", w=1.9, color=RED)
+    message_arrow("Threads de consulta", "SuperVila", yr, "nova tentativa após 0,5 s → 1 s → 2 s (4 no total)", color=RED, size=8)
+    note(x["SuperVila"] - 0.2, yr - 0.45, "fora do ar: 4 tentativas", w=1.9, color=RED)
 
     y = 4.1
     message_arrow("Threads de consulta", "Agregador", y, "5 MarketResult (4 ok, 1 erro)", is_return=True)

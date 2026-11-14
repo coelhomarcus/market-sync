@@ -9,7 +9,6 @@ Usa o `socketserver` da biblioteca padrão, que cuida do ciclo socket() → bind
 
 Pedidos (uma linha JSON cada, ver common/protocol.py):
     SEARCH  {"q": "arroz"}                         produtos que casam com a busca
-    BASKET  {"items": [{"slug": "...", "qty": 2}]} preço da cesta neste mercado
     STATUS                                         situação do mercado (responde mesmo fora do ar)
     CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (operação "configurar" do cliente)
 
@@ -77,9 +76,6 @@ class Market:
         if cmd == "SEARCH":
             self.simulate_latency()
             return {"items": self.database.search(str(request.get("q", "")))}
-        if cmd == "BASKET":
-            self.simulate_latency()
-            return self.database.basket(request.get("items") or [])
         raise ValueError(f"comando desconhecido: {cmd!r}")
 
     def new_connection(self) -> int:
@@ -166,8 +162,6 @@ class ConnectionHandler(socketserver.StreamRequestHandler):
     def arguments(cmd: str, request: dict) -> str:
         if cmd == "SEARCH":
             return f'"{request.get("q", "")}"'
-        if cmd == "BASKET":
-            return f"{len(request.get('items') or [])} itens"
         if cmd == "CONFIG":
             return " ".join(f"{k}={v}" for k, v in request.items() if k != "cmd")
         return ""
@@ -181,8 +175,6 @@ class ConnectionHandler(socketserver.StreamRequestHandler):
             summary = f"erro: {response['error']}"
         elif cmd == "SEARCH":
             summary = f"{len(response['data']['items'])} itens"
-        elif cmd == "BASKET":
-            summary = f"cesta R$ {response['data']['total']:.2f}"
         else:
             d = response["data"]
             summary = f"agora {'no ar' if d.get('online') else 'FORA DO AR'}, latência {d.get('latency_ms')} ms"
@@ -205,7 +197,7 @@ class MarketServer(socketserver.ThreadingTCPServer):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=f"Servidor TCP do supermercado {NAME} (porta {PORT})")
-    parser.add_argument("--latencia", dest="latency", type=int, help=f"latência simulada em ms (padrão {LATENCY_MS})")
+    parser.add_argument("--latency", type=int, help=f"latência simulada em ms (padrão {LATENCY_MS})")
     args = parser.parse_args()
 
     quiet = os.environ.get("QUIET", "") in ("1", "true", "sim")

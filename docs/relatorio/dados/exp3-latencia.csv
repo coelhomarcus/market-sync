@@ -1,0 +1,71 @@
+cenario,descricao,rodada,modo,tempo_ms,mercados_ok
+Sem atraso,0 ms em todos,1,sequencial,11.99,5
+Sem atraso,0 ms em todos,1,concorrente,4.1,5
+Sem atraso,0 ms em todos,2,concorrente,3.6,5
+Sem atraso,0 ms em todos,2,sequencial,12.15,5
+Sem atraso,0 ms em todos,3,sequencial,10.44,5
+Sem atraso,0 ms em todos,3,concorrente,3.43,5
+Sem atraso,0 ms em todos,4,concorrente,2.91,5
+Sem atraso,0 ms em todos,4,sequencial,8.94,5
+Sem atraso,0 ms em todos,5,sequencial,7.52,5
+Sem atraso,0 ms em todos,5,concorrente,2.84,5
+200 ms,200 ms em todos,1,sequencial,967.75,5
+200 ms,200 ms em todos,1,concorrente,230.95,5
+200 ms,200 ms em todos,2,concorrente,225.54,5
+200 ms,200 ms em todos,2,sequencial,1013.5,5
+200 ms,200 ms em todos,3,sequencial,1084.74,5
+200 ms,200 ms em todos,3,concorrente,231.5,5
+200 ms,200 ms em todos,4,concorrente,226.73,5
+200 ms,200 ms em todos,4,sequencial,1024.23,5
+200 ms,200 ms em todos,5,sequencial,1030.27,5
+200 ms,200 ms em todos,5,concorrente,239.41,5
+500 ms,500 ms em todos,1,sequencial,2586.88,5
+500 ms,500 ms em todos,1,concorrente,537.74,5
+500 ms,500 ms em todos,2,concorrente,574.1,5
+500 ms,500 ms em todos,2,sequencial,2386.49,5
+500 ms,500 ms em todos,3,sequencial,2506.07,5
+500 ms,500 ms em todos,3,concorrente,579.08,5
+500 ms,500 ms em todos,4,concorrente,572.48,5
+500 ms,500 ms em todos,4,sequencial,2516.26,5
+500 ms,500 ms em todos,5,sequencial,2412.97,5
+500 ms,500 ms em todos,5,concorrente,548.96,5
+1000 ms,1000 ms em todos,1,sequencial,5024.73,5
+1000 ms,1000 ms em todos,1,concorrente,1110.63,5
+1000 ms,1000 ms em todos,2,concorrente,1036.59,5
+1000 ms,1000 ms em todos,2,sequencial,4611.31,5
+1000 ms,1000 ms em todos,3,sequencial,5214.02,5
+1000 ms,1000 ms em todos,3,concorrente,1134.58,5
+1000 ms,1000 ms em todos,4,concorrente,1023.56,5
+1000 ms,1000 ms em todos,4,sequencial,5400.77,5
+1000 ms,1000 ms em todos,5,sequencial,5002.14,5
+1000 ms,1000 ms em todos,5,concorrente,1140.43,5
+Padrão,300 a 1200 ms,1,sequencial,3444.5,5
+Padrão,300 a 1200 ms,1,concorrente,1100.17,5
+Padrão,300 a 1200 ms,2,concorrente,1174.49,5
+Padrão,300 a 1200 ms,2,sequencial,3587.17,5
+Padrão,300 a 1200 ms,3,sequencial,3652.85,5
+Padrão,300 a 1200 ms,3,concorrente,1094.95,5
+Padrão,300 a 1200 ms,4,concorrente,1211.78,5
+Padrão,300 a 1200 ms,4,sequencial,3808.66,5
+Padrão,300 a 1200 ms,5,sequencial,3735.27,5
+Padrão,300 a 1200 ms,5,concorrente,1311.83,5
+Um lento,"padrão, Ipê com 2500 ms",1,sequencial,4525.72,5
+Um lento,"padrão, Ipê com 2500 ms",1,concorrente,2293.8,5
+Um lento,"padrão, Ipê com 2500 ms",2,concorrente,2581.43,5
+Um lento,"padrão, Ipê com 2500 ms",2,sequencial,4972.13,5
+Um lento,"padrão, Ipê com 2500 ms",3,sequencial,4907.55,5
+Um lento,"padrão, Ipê com 2500 ms",3,concorrente,2413.87,5
+Um lento,"padrão, Ipê com 2500 ms",4,concorrente,2847.2,5
+Um lento,"padrão, Ipê com 2500 ms",4,sequencial,5123.07,5
+Um lento,"padrão, Ipê com 2500 ms",5,sequencial,4801.72,5
+Um lento,"padrão, Ipê com 2500 ms",5,concorrente,2669.05,5
+Um em timeout,"padrão, Ipê com 4000 ms",1,sequencial,5429.96,4
+Um em timeout,"padrão, Ipê com 4000 ms",1,concorrente,3002.65,4
+Um em timeout,"padrão, Ipê com 4000 ms",2,concorrente,3002.6,4
+Um em timeout,"padrão, Ipê com 4000 ms",2,sequencial,5419.94,4
+Um em timeout,"padrão, Ipê com 4000 ms",3,sequencial,5471.45,4
+Um em timeout,"padrão, Ipê com 4000 ms",3,concorrente,3003.2,4
+Um em timeout,"padrão, Ipê com 4000 ms",4,concorrente,3002.8,4
+Um em timeout,"padrão, Ipê com 4000 ms",4,sequencial,5504.9,4
+Um em timeout,"padrão, Ipê com 4000 ms",5,sequencial,5334.89,4
+Um em timeout,"padrão, Ipê com 4000 ms",5,concorrente,3003.45,4

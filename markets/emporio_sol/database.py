@@ -45,18 +45,3 @@ class MarketDatabase:
         with self._connect() as db:
             return [dict(line) for line in db.execute(sql, [f"%{p}%" for p in words])]
 
-    def basket(self, items: list[dict]) -> dict:
-        """Preço de uma cesta: linhas com subtotal, itens que faltam e total."""
-        rows, missing, total = [], [], 0.0
-        with self._connect() as db:
-            for item in items:
-                slug, qty = str(item.get("slug", "")), max(1, int(item.get("qty", 1)))
-                row = db.execute("SELECT name, brand, unit, price, stock FROM products WHERE slug = ?", (slug,)).fetchone()
-                if row is None or row["stock"] <= 0:
-                    missing.append(slug)
-                    continue
-                subtotal = round(row["price"] * qty, 2)
-                total += subtotal
-                rows.append({"slug": slug, "name": row["name"], "brand": row["brand"], "unit": row["unit"],
-                               "qty": qty, "price": row["price"], "subtotal": subtotal})
-        return {"lines": rows, "missing": missing, "total": round(total, 2)}

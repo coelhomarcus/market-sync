@@ -32,7 +32,7 @@ def columns(p):
 
 def test_sequential_bars_form_a_staircase(market_cluster, panels, capsys):
     _, markets = market_cluster
-    Aggregator(markets).execute("sequential", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("sequential", PAYLOAD, "arroz")
     (p,) = panels
     rows = list(p.rows.values())
     for before, after in zip(rows, rows[1:]):
@@ -45,7 +45,7 @@ def test_sequential_bars_form_a_staircase(market_cluster, panels, capsys):
 
 def test_concurrent_bars_start_together(market_cluster, panels, capsys):
     _, markets = market_cluster
-    Aggregator(markets).execute("concurrent", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("concurrent", PAYLOAD, "arroz")
     (p,) = panels
     assert columns(p) == [0] * 5  # todas as conexões abrem juntas
     assert [c.thread for c in p.rows.values()] == [f"thread_{n}" for n in range(1, 6)] and p.threads == 5
@@ -57,7 +57,7 @@ def test_concurrent_bars_start_together(market_cluster, panels, capsys):
 def test_failure_and_retry_show_in_the_panel(market_cluster, panels, capsys):
     servers, markets = market_cluster
     servers[0].market.configure({"online": False})
-    Aggregator(markets).execute("concurrent", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("concurrent", PAYLOAD, "arroz")
     (p,) = panels
     aurora = p.rows[markets[0].id]
     assert aurora.state == "erro" and aurora.attempts == 4 and "fora do ar" in aurora.error
@@ -68,7 +68,7 @@ def test_failure_and_retry_show_in_the_panel(market_cluster, panels, capsys):
 def test_silent_mode_prints_nothing(market_cluster, monkeypatch, capsys):
     monkeypatch.setattr(display, "ENABLED", False)
     _, markets = market_cluster
-    Aggregator(markets).execute("concurrent", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("concurrent", PAYLOAD, "arroz")
     assert capsys.readouterr().out == ""
 
 
@@ -80,7 +80,7 @@ def raw(monkeypatch):
 
 def test_raw_mode_shows_every_step_of_every_call(market_cluster, raw, capsys):
     _, markets = market_cluster
-    Aggregator(markets).execute("concurrent", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("concurrent", PAYLOAD, "arroz")
     log_out = capsys.readouterr().out
     for step in ("CONNECT", "ENVIA", "RECEBE", "CLOSE"):
         assert log_out.count(step) == 5, step  # cada passo, uma vez por mercado
@@ -92,7 +92,7 @@ def test_raw_mode_shows_every_step_of_every_call(market_cluster, raw, capsys):
 def test_raw_mode_shows_retries_and_empty_answer(market_cluster, raw, capsys):
     servers, markets = market_cluster
     servers[0].market.configure({"online": False})
-    Aggregator(markets).execute("sequential", "search", PAYLOAD, "arroz")
+    Aggregator(markets).execute("sequential", PAYLOAD, "arroz")
     log_out = capsys.readouterr().out
     assert "fechou a conexão sem responder" in log_out
     assert log_out.count("nova tentativa em") == 3 and "fora do ar (4 tentativas)" in log_out

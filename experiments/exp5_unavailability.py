@@ -1,11 +1,11 @@
 """Experimento 5 — indisponibilidade de serviço.
 
-Desativa o Mercadinho Ipê (o mais lento) e observa o tratamento da falha, em quatro cenários:
+Desativa a SuperVila (a segunda da lista, 500 ms) e observa o tratamento da falha, em quatro cenários:
 antes da pesquisa, 0,3 s depois do início (com a consulta já em andamento) e "cai e volta".
 A desativação vai por uma segunda conexão TCP ("configurar" com online=false), enquanto
 a primeira espera a resposta da pesquisa. Gera a tabela e o gráfico fig-11 (barras no tempo).
 
-Rodar sozinho:  .venv/bin/python -m experiments.exp5_unavailability   (com o start.py --silencioso no ar)
+Rodar sozinho:  .venv/bin/python -m experiments.exp5_unavailability   (com o start.py --quiet no ar)
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ from . import shared as c
 NUMBER = 5
 CSV = "exp5-indisponibilidade.csv"
 CSV_TIMELINE = "exp5-gantt.csv"
-TARGET = "ipe"
+TARGET = "supervila"
 TARGET_NAME = c.SHORT_NAMES[TARGET]
 
 SCENARIOS = [
     ("Todos no ar", "referência"),
-    ("Fora do ar antes", f"{TARGET_NAME} desativado antes da pesquisa"),
-    ("Cai durante", f"{TARGET_NAME} desativado 0,3 s depois do início"),
+    ("Fora do ar antes", f"{TARGET_NAME} sai do ar antes da pesquisa"),
+    ("Cai durante", f"{TARGET_NAME} sai do ar 0,3 s depois do início"),
     ("Cai e volta", f"{TARGET_NAME} cai em 0,3 s e volta em 1,0 s"),
 ]
 
@@ -34,7 +34,7 @@ def measure(client, quick: bool = False) -> None:
     from client.connection import AggregatorClient
 
     rounds = 1 if quick else 3
-    c.log(f"\nExperimento 5: indisponibilidade do {TARGET_NAME} ({rounds} rodadas por cenário)")
+    c.log(f"\nExperimento 5: indisponibilidade de serviço, alvo {TARGET_NAME} ({rounds} rodadas por cenário)")
     c.configure_all(client)
 
     def go_down(admin):
@@ -43,7 +43,7 @@ def measure(client, quick: bool = False) -> None:
     def come_back(admin):
         admin.configure(TARGET, online=True)
 
-    actions = {  # o que acontece com o Ipê em cada cenário
+    actions = {  # o que acontece com o mercado-alvo em cada cenário
         "Todos no ar": {},
         "Fora do ar antes": {"before": True},
         "Cai durante": {"during": [(0.3, go_down)]},
@@ -87,7 +87,7 @@ def analyze(md: list[str]) -> None:
     data = c.read_csv(CSV)
     if not data:
         return
-    results = []  # (cenário, descrição, modo, tempo médio, mercados com resposta, tentativas no Ipê, erros, rodadas)
+    results = []  # (cenário, descrição, modo, tempo médio, mercados com resposta, tentativas no alvo, erros, rodadas)
     for scenario, desc in SCENARIOS:
         for mode in c.MODES:
             rs = [d for d in data if d["cenario"] == scenario and d["modo"] == mode]
@@ -98,8 +98,8 @@ def analyze(md: list[str]) -> None:
                             sorted({d["erro_alvo"] for d in rs if d["erro_alvo"]}), len(rs)))
     if not results:
         return
-    c.table(md, f"Experimento 5 — indisponibilidade do {TARGET_NAME} ({results[0][7]} rodadas por cenário)",
-            ["Cenário", "O que acontece", "Modo", "Tempo médio", "Mercados com resposta", f"Tentativas no {TARGET_NAME}",
+    c.table(md, f"Experimento 5 — indisponibilidade de serviço, alvo {TARGET_NAME} ({results[0][7]} rodadas por cenário)",
+            ["Cenário", "O que acontece", "Modo", "Tempo médio", "Mercados com resposta", f"Tentativas ({TARGET_NAME})",
              "Erro informado"],
             [[s, d, m.capitalize(), c.fmt_s(t), f"{c.fmt_num(o)} de 5", c.fmt_num(a), ", ".join(e) or "—"]
              for s, d, m, t, o, a, e, _ in results])

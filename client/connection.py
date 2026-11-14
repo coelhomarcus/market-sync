@@ -47,10 +47,6 @@ class AggregatorClient:
     def compare(self, product: str, rounds: int = 1) -> dict:
         return self.request("comparar", {"produto": product, "repeticoes": rounds})
 
-    def basket(self, items: list[dict], mode: str = "concorrente") -> dict:
-        """items: [{"produto": slug, "quantidade": 2}, ...]"""
-        return self.request("cesta", {"itens": items, "modo": mode})
-
     def markets(self) -> dict:
         return self.request("mercados")
 

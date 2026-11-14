@@ -8,7 +8,7 @@ ver common/protocol.py), com as mensagens no formato sugerido pelo enunciado:
                            "resultados": [{"produto": "Arroz Branco", "menor_preco": {...},
                                            "ofertas": [{"fonte": "Max Atacarejo", "preco": 24.9, ...}]}], ...}
 
-Operações: consultar, comparar, cesta, mercados, configurar, encerrar (docs/protocolo.md).
+Operações: consultar, comparar, mercados, configurar, encerrar (docs/protocolo.md).
 
 Uma conexão pode levar várias operações seguidas: o cliente de terminal mantém a
 conexão aberta durante a sessão. Ela termina quando o cliente envia
@@ -172,7 +172,6 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         handler = {  # operação do protocolo (em português, como no enunciado) → método
             "consultar": self.op_search,
             "comparar": self.op_compare,
-            "cesta": self.op_basket,
             "mercados": self.op_markets,
             "configurar": self.op_configure,
             "encerrar": self.op_close,
@@ -184,7 +183,7 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
     def op_search(self, request: dict) -> dict:
         query, mode = _product(request), _mode(request)
         limit = _int(request, "limite", 10, 1, MAX_LIMIT)
-        results, record = self.aggregator.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")
+        results, record = self.aggregator.execute(mode, {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")
         data = consolidation.search_response(results, record, category="", sort="preco", page=1, page_size=limit)
         products = [{
             "produto": p["name"],
@@ -219,7 +218,7 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         records = []
         for i in range(runs):  # alterna a ordem para nenhum modo levar vantagem
             for mode in ("sequential", "concurrent") if i % 2 == 0 else ("concurrent", "sequential"):
-                records.append(self.aggregator.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")[1])
+                records.append(self.aggregator.execute(mode, {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")[1])
         times = {m: [r["total_ms"] for r in records if r["mode"] == m] for m in ("sequential", "concurrent")}
         mean = {m: round(statistics.fmean(t), 2) for m, t in times.items()}
         last = {r["mode"]: r for r in records}
@@ -235,39 +234,6 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
                 "mercados": _markets_summary(last[m]),
             } for m in ("sequential", "concurrent")},
             "speedup": round(mean["sequential"] / mean["concurrent"], 2),
-        }
-
-    def op_basket(self, request: dict) -> dict:
-        mode = _mode(request)
-        items = request.get("itens")
-        if not isinstance(items, list) or not 1 <= len(items) <= 60:
-            raise RequestError("PARAMETRO_INVALIDO", "'itens' deve ser uma lista com 1 a 60 itens")
-        wanted: dict[str, int] = {}
-        for item in items:
-            slug = item.get("produto") if isinstance(item, dict) else None
-            qty = item.get("quantidade", 1) if isinstance(item, dict) else None
-            if not isinstance(slug, str) or not slug or isinstance(qty, bool) or not isinstance(qty, int) or not 1 <= qty <= 99:
-                raise RequestError("PARAMETRO_INVALIDO", "cada item precisa de 'produto' (slug) e 'quantidade' entre 1 e 99")
-            wanted[slug] = qty
-        payload = {"cmd": "BASKET", "items": [{"slug": s, "qty": q} for s, q in wanted.items()]}
-        results, record = self.aggregator.execute(mode, "basket", payload, f"cesta ({len(wanted)} itens)", source="cliente_tcp")
-        data = consolidation.basket_response(wanted, results, record)
-        totals = [{
-            "fonte": m["market_name"],
-            "status": "sucesso" if m["ok"] else "erro",
-            "total": m.get("total"),
-            "completa": m.get("complete", False),
-            "faltando": m.get("missing", []),
-            "erro": m.get("error"),
-        } for m in data["markets"]]
-        cheapest = data["cheapest"]
-        return {
-            "status": _overall_status(record),
-            "modo": MODE_NAMES[mode],
-            "tempo_total_ms": record["total_ms"],
-            "totais": totals,  # do menor total (cesta completa) para o maior
-            "mais_barato": {"fonte": cheapest["market_name"], "total": cheapest["total"]} if cheapest else None,
-            "mercados": _markets_summary(record),
         }
 
     def op_markets(self, request: dict) -> dict:  # noqa: ARG002
@@ -389,6 +355,7 @@ def main() -> None:
         finally:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(sig, signal.SIG_IGN)  # Ctrl+C repetido não interrompe a espera
+            display.shutting_down()
             server.wait_for_requests(SHUTDOWN_WAIT_S)  # quem já pediu recebe a resposta
             display.stop()
 

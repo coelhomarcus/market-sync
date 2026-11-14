@@ -40,13 +40,13 @@ Todos os comandos abaixo são rodados **da raiz do projeto**.
 .venv/bin/python start.py
 ```
 
-Sobe os 5 supermercados e o agregador. Na primeira vez, gera os bancos SQLite. O terminal vira o **painel gráfico** em tela cheia, e **Ctrl+C** encerra tudo: o agregador espera as pesquisas em andamento terminarem e depois fecha os mercados.
+Sobe os 5 supermercados e o agregador. Na primeira vez, gera os bancos SQLite. O terminal vira o **painel gráfico**, com o histórico de todas as pesquisas, e **Ctrl+C** encerra tudo: o agregador espera as pesquisas em andamento terminarem e depois fecha os mercados.
 
 | Opção | O que faz |
 |---|---|
 | *(nenhuma)* | Painel gráfico: um quadro por pesquisa, com uma barra por supermercado crescendo ao vivo |
 | `--raw` | Modo cru: cada chamada TCP linha a linha (connect, mensagem enviada, resposta, close), dos dois lados |
-| `--silencioso` | Sem painel. Use durante os experimentos |
+| `--quiet` | Sem painel. Use durante os experimentos |
 
 ### Pesquisar (cliente TCP)
 
@@ -61,26 +61,25 @@ Abre o modo interativo: o cliente conecta na porta 5050 e mantém a conexão abe
 | Comando | O que faz |
 |---|---|
 | `arroz branco 5 kg` | Pesquisa nos 5 supermercados (no modo atual) |
-| `/modo sequencial` · `/modo concorrente` | Troca o modo das próximas pesquisas |
-| `/comparar arroz 3` | Mesma pesquisa nos dois modos, 3 rodadas cada, e mostra o speedup |
-| `/cesta 1 3x2 5` | Cesta com os itens da última lista (`3x2` = item 3, 2 unidades) e o supermercado mais barato |
-| `/mercados` | Situação de cada supermercado e quantos clientes estão conectados |
-| `/derrubar ipe` · `/religar ipe` | Tira um supermercado do ar e traz de volta (ids: `aurora`, `supervila`, `emporio-sol`, `max-atacarejo`, `ipe`) |
-| `/latencia ipe 2500` | Muda a latência simulada de um supermercado (acima de 3000 ms vira timeout) |
+| `/seq` · `/con` | Troca o modo das próximas pesquisas: sequencial · concorrente |
+| `/compare arroz 3` | Mesma pesquisa nos dois modos, 3 rodadas cada, e mostra o speedup |
+| `/markets` | Situação de cada supermercado e quantos clientes estão conectados |
+| `/down supervila` · `/up supervila` | Tira um supermercado do ar e traz de volta (ids: `aurora`, `supervila`, `emporio-sol`, `max-atacarejo`, `ipe`) |
+| `/latency ipe 2500` | Muda a latência simulada de um supermercado (acima de 3000 ms vira timeout) |
 | `/json` | Liga/desliga a exibição da resposta JSON crua do protocolo |
-| `/ajuda` · `/sair` | Ajuda · encerra a conexão |
+| `/help` · `/exit` | Lista os comandos · encerra a conexão |
 
 Também dá para fazer uma pesquisa só e sair:
 
 ```bash
-.venv/bin/python -m client "arroz branco 5 kg" --modo sequencial
+.venv/bin/python -m client "arroz branco 5 kg" --mode seq
 ```
 
 ```bash
-.venv/bin/python -m client cafe --comparar 3
+.venv/bin/python -m client cafe --compare 3
 ```
 
-Opções: `--modo sequencial|concorrente`, `--comparar N`, `--limite N` (produtos mostrados, padrão 5), `--json`, `--host`, `--port`.
+Opções: `--mode seq|con` (padrão `con`), `--compare N`, `--limit N` (produtos mostrados, padrão 5), `--json`, `--host`, `--port`.
 
 ### Rodar uma peça sozinha
 
@@ -90,7 +89,7 @@ Cada supermercado é um serviço independente e pode subir sozinho:
 .venv/bin/python -m markets.aurora
 ```
 
-Os outros: `markets.supervila`, `markets.emporio_sol`, `markets.max_atacarejo` e `markets.ipe`. Opção: `--latencia 800`.
+Os outros: `markets.supervila`, `markets.emporio_sol`, `markets.max_atacarejo` e `markets.ipe`. Opção: `--latency 800`.
 
 O agregador sozinho (precisa dos supermercados no ar):
 
@@ -100,7 +99,7 @@ O agregador sozinho (precisa dos supermercados no ar):
 
 ### Experimentos obrigatórios
 
-Com o sistema no ar em modo silencioso (`.venv/bin/python start.py --silencioso`), em outro terminal:
+Com o sistema no ar em modo silencioso (`.venv/bin/python start.py --quiet`), em outro terminal:
 
 ```bash
 .venv/bin/python -m experiments
@@ -110,11 +109,11 @@ Roda os 5 experimentos do enunciado pelo cliente TCP, em cerca de 6 minutos. Gra
 
 | Opção | O que faz |
 |---|---|
-| `--so 4 5` | Mede só alguns experimentos |
-| `--analisar` | Não mede nada: refaz tabelas e gráficos a partir dos CSV |
-| `--rapido` | Poucas rodadas, só para testar o script |
+| `--only 4 5` | Mede só alguns experimentos |
+| `--analyze` | Não mede nada: refaz tabelas e gráficos a partir dos CSV |
+| `--quick` | Poucas rodadas, só para testar o script |
 
-Cada experimento também roda sozinho (aceita `--rapido` e `--analisar`):
+Cada experimento também roda sozinho (aceita `--quick` e `--analyze`):
 
 ```bash
 .venv/bin/python -m experiments.exp3_latency
@@ -161,7 +160,7 @@ Organizada pelos três componentes do enunciado (seção 6). Nomes de pastas, ar
 │   ├── sequential.py          ★ um supermercado de cada vez (thread_1)
 │   ├── concurrent.py          ★ todos ao mesmo tempo (thread_1 … thread_5)
 │   ├── market_query.py        uma ida e volta TCP a um supermercado, com timeout e retry
-│   ├── consolidation.py       junta as ofertas, ordena por preço, menor preço, cesta mais barata
+│   ├── consolidation.py       junta as ofertas, ordena por preço, menor preço
 │   └── display.py             o painel no terminal (gráfico e --raw)
 │
 ├── markets/                   ③ SERVIÇOS INDEPENDENTES  ·  um processo e uma porta cada
@@ -191,7 +190,7 @@ O código das cinco pastas de `markets/` é o mesmo, **de propósito**: cada sup
 
 ## As duas visualizações do terminal
 
-**Gráfico** (`start.py`): painel em tela cheia, como o `htop`, que se redesenha ao redimensionar. Em cima ficam os supermercados, os clientes conectados e os últimos avisos; embaixo, as pesquisas, a mais recente em cima, todas na mesma régua de tempo:
+**Gráfico** (`start.py`): cada pesquisa terminada, de qualquer cliente, vira um quadro no histórico do terminal, junto com os avisos (cliente conectou, mercado caiu…). A mais recente fica embaixo, e dá para rolar com o mouse até a primeira. Fixa embaixo de tudo fica a parte ao vivo: as pesquisas em andamento, os supermercados e os clientes conectados. Ao redimensionar a janela, tudo é redesenhado na largura nova. Todos os quadros usam a mesma régua de tempo:
 
 ```
 ╭─ #8f8e "arroz branco 5 kg" · concorrente · cliente TCP ──────────────────────────────╮
@@ -247,7 +246,7 @@ agregador → mercado     {"cmd": "SEARCH", "q": "arroz"}
 mercado → agregador     {"ok": true, "data": {"items": [...]}, "cpu_ms": 1.2, "thread": "conexão nº 3"}
 ```
 
-- **Operações do cliente:** `consultar`, `comparar`, `cesta`, `mercados`, `configurar`, `encerrar`.
+- **Operações do cliente:** `consultar`, `comparar`, `mercados`, `configurar`, `encerrar`.
 - **Erros:** vêm com um `codigo`, por exemplo `PARAMETRO_INVALIDO` ou `NENHUM_MERCADO_RESPONDEU`.
 - **Supermercado que não responde:** gera `status: "parcial"` com o motivo, e os outros resultados chegam normalmente.
 
@@ -259,10 +258,10 @@ Deixe dois terminais lado a lado: à esquerda o `start.py` (o painel), à direit
 
 1. **Processos e portas:** `lsof -nP -iTCP:5001-5005 -iTCP:5050 -sTCP:LISTEN` mostra os 6 processos, cada um na sua porta.
 2. **Concorrente:** `python -m client`, pesquise `arroz branco 5 kg`. No painel, as 5 barras saem juntas, em 5 threads.
-3. **Sequencial:** `/modo sequencial` e a mesma pesquisa. No painel, uma escada, numa thread só.
-4. **Speedup:** `/comparar arroz 3`.
+3. **Sequencial:** `/seq` e a mesma pesquisa. No painel, uma escada, numa thread só.
+4. **Speedup:** `/compare arroz 3`.
 5. **Vários clientes:** abra um segundo cliente e pesquise nos dois ao mesmo tempo. São dois quadros em andamento juntos, mesmo no sequencial.
-6. **Falha:** `/derrubar ipe` e pesquise. A resposta vem dos outros 4, com o motivo, e no painel aparecem as novas tentativas. Depois, `/religar ipe`.
+6. **Falha:** `/down supervila` e pesquise. A resposta vem dos outros 4, com o motivo, e no painel aparecem as novas tentativas. Depois, `/up supervila`.
 7. **Protocolo:** `/json` mostra a mensagem crua. Ou suba com `start.py --raw` para ver cada connect, envio, resposta e close, dos dois lados.
 8. **Experimentos:** gráficos `fig-08` a `fig-11` em `docs/relatorio/figuras/`.
 

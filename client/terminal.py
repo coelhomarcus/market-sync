@@ -5,8 +5,8 @@ Toda a conversa com o agregador passa por client/connection.py (socket TCP).
 Uso (da raiz do projeto, com o start.py rodando em outro terminal):
     .venv/bin/python -m client                          # modo interativo
     .venv/bin/python -m client arroz                    # uma pesquisa e sai
-    .venv/bin/python -m client "arroz 5 kg" --modo sequencial
-    .venv/bin/python -m client cafe --comparar 3        # sequencial × concorrente, 3 rodadas
+    .venv/bin/python -m client "arroz 5 kg" --mode seq  # seq = sequencial, con = concorrente (padrão)
+    .venv/bin/python -m client cafe --compare 3         # sequencial × concorrente, 3 rodadas
     .venv/bin/python -m client arroz --json             # mostra o JSON cru da resposta
 """
 
@@ -97,23 +97,6 @@ def show_comparison(r: dict) -> None:
         print(f"\n  Speedup: {bold(times_fmt + '×')} (sequencial ÷ concorrente)\n")
 
 
-def show_basket(r: dict) -> None:
-    print()
-    print(f"  Cesta · modo {r['modo']} · {bold(ms(r['tempo_total_ms']))}")
-    for t in r["totais"]:
-        if t["status"] != "sucesso":
-            print(f"    {t['fonte']:<16} {red('sem resposta: ' + t['erro'])}")
-            continue
-        n = len(t["faltando"])
-        missing_note = gray(f"  {'falta 1 item' if n == 1 else f'faltam {n} itens'}") if n else ""
-        marker = green("★ ") if r["mais_barato"] and t["fonte"] == r["mais_barato"]["fonte"] else "  "
-        print(f"  {marker}{t['fonte']:<16} {brl(t['total']):>10}{missing_note}")
-    if r["mais_barato"]:
-        print(green(f"\n  Mais barato: {r['mais_barato']['fonte']} ({brl(r['mais_barato']['total'])})\n"))
-    else:
-        print("\n  Nenhum mercado tem todos os itens.\n")
-
-
 def show_status(r: dict) -> None:
     print()
     for m in r["mercados"]:
@@ -130,21 +113,23 @@ def show_status(r: dict) -> None:
 HELP = """
   Digite o nome de um produto para pesquisar (ex.: arroz, café 500 g, leite integral).
 
-  /modo sequencial | concorrente   troca o modo das próximas pesquisas
-  /comparar <produto> [rodadas]    mesma pesquisa nos dois modos, com speedup
-  /cesta 1 3x2 5                   cesta com os itens da última lista (3x2 = item 3, 2 unidades)
-  /mercados                        situação de cada supermercado
-  /derrubar <id>  /religar <id>    tira um mercado do ar / traz de volta
-  /latencia <id> <ms>              muda a latência simulada de um mercado
+  /seq                             próximas pesquisas no modo sequencial
+  /con                             próximas pesquisas no modo concorrente
+  /compare <produto> [rodadas]     mesma pesquisa nos dois modos, com speedup
+  /markets                         situação de cada supermercado
+  /down <id>   /up <id>            tira um mercado do ar / traz de volta
+  /latency <id> <ms>               muda a latência simulada de um mercado
   /json                            liga/desliga a exibição do JSON cru
-  /sair                            encerra a conexão
+  /help                            mostra esta lista
+  /exit                            encerra a conexão
 """
+
+MODES = {"seq": "sequencial", "con": "concorrente"}  # comando / flag → valor do campo "modo" do protocolo
 
 
 def interactive(client: AggregatorClient, mode: str, limit: int, raw: bool) -> None:
     print(bold("\n  Comparador de Preços — cliente TCP"))
-    print(f"  Conectado ao agregador em {client.host}:{client.port}. Modo: {mode}. /ajuda para os comandos.\n")
-    last_list: list[dict] = []
+    print(f"  Conectado ao agregador em {client.host}:{client.port}. Modo: {mode}. /help para os comandos.\n")
     while True:
         try:
             line = input(f"{mode}> ").strip()
@@ -156,53 +141,42 @@ def interactive(client: AggregatorClient, mode: str, limit: int, raw: bool) -> N
         cmd, _, rest = line.partition(" ")
         rest = rest.strip()
         try:
-            if cmd in ("/sair", "/q", "/exit"):
+            if cmd in ("/exit", "/quit", "/q"):
                 return
-            if cmd in ("/ajuda", "/help", "/?"):
+            if cmd in ("/help", "/?"):
                 print(HELP)
                 continue
             if cmd == "/json":
                 raw = not raw
                 print(f"  JSON cru {'ligado' if raw else 'desligado'}.")
                 continue
-            if cmd == "/modo":
-                choice = {"seq": "sequencial", "sequencial": "sequencial", "conc": "concorrente", "concorrente": "concorrente"}.get(rest)
-                if not choice:
-                    print("  Use /modo sequencial ou /modo concorrente.")
-                else:
-                    mode = choice
+            if cmd in ("/seq", "/con"):
+                mode = MODES[cmd[1:]]
+                print(f"  Modo {mode}.")
                 continue
 
-            if cmd == "/comparar":
-                parts = rest.rsplit(" ", 1)  # "/comparar cafe 3": o número no fim é a quantidade de rodadas
+            if cmd == "/compare":
+                parts = rest.rsplit(" ", 1)  # "/compare cafe 3": o número no fim é a quantidade de rodadas
                 has_rounds = len(parts) == 2 and parts[1].isdigit()
                 rounds = int(parts[1]) if has_rounds else 1
                 product = parts[0] if has_rounds else rest
                 r, show = client.compare(product, rounds), show_comparison
-            elif cmd == "/cesta":
-                items = []
-                for token in rest.split():
-                    num, _, qty = token.partition("x")
-                    items.append({"produto": last_list[int(num) - 1]["slug"], "quantidade": int(qty or 1)})
-                r, show = client.basket(items, mode), show_basket
-            elif cmd == "/mercados":
+            elif cmd == "/markets":
                 r, show = client.markets(), show_status
-            elif cmd in ("/derrubar", "/religar"):
-                r = client.configure(rest, online=cmd == "/religar")
+            elif cmd in ("/down", "/up"):
+                r = client.configure(rest, online=cmd == "/up")
                 show = lambda r: print(f"  {r['fonte']}: {'no ar' if r['online'] else 'fora do ar'}.")  # noqa: E731
-            elif cmd == "/latencia":
+            elif cmd == "/latency":
                 market, value = rest.split()
                 r = client.configure(market, latency_ms=int(value))
                 show = lambda r: print(f"  {r['fonte']}: latência {r['latencia_ms']} ms.")  # noqa: E731
             elif cmd.startswith("/"):
-                print("  Comando desconhecido. /ajuda mostra a lista.")
+                print("  Comando desconhecido. /help mostra a lista.")
                 continue
             else:
                 r, show = client.search(line, mode, limit), show_search
-                if r["status"] != "erro":
-                    last_list = r["resultados"]
         except (ValueError, IndexError):
-            print("  Não entendi. /ajuda mostra a forma de cada comando.")
+            print("  Não entendi. /help mostra a forma de cada comando.")
             continue
         except (ConnectionError, protocol.ProtocolError, socket.timeout) as exc:
             print(red(f"  A conexão com o agregador caiu: {exc}"))
@@ -219,13 +193,14 @@ def interactive(client: AggregatorClient, mode: str, limit: int, raw: bool) -> N
 def main() -> int:
     parser = argparse.ArgumentParser(description="Cliente TCP do comparador de preços")
     parser.add_argument("product", nargs="?", metavar="produto", help="pesquisa única (sem isso, abre o modo interativo)")
-    parser.add_argument("--modo", dest="mode", choices=["sequencial", "concorrente"], default="concorrente")
-    parser.add_argument("--comparar", dest="compare", type=int, metavar="N", help="roda a pesquisa N vezes em cada modo e mostra o speedup")
-    parser.add_argument("--limite", dest="limit", type=int, default=5, help="quantos produtos mostrar (padrão 5)")
+    parser.add_argument("--mode", choices=list(MODES), default="con", help="seq = sequencial, con = concorrente (padrão)")
+    parser.add_argument("--compare", type=int, metavar="N", help="roda a pesquisa N vezes em cada modo e mostra o speedup")
+    parser.add_argument("--limit", type=int, default=5, help="quantos produtos mostrar (padrão 5)")
     parser.add_argument("--json", action="store_true", help="mostra a resposta JSON crua")
     parser.add_argument("--host", default=config.AGGREGATOR_HOST)
     parser.add_argument("--port", type=int, default=config.AGGREGATOR_TCP_PORT)
     args = parser.parse_args()
+    mode = MODES[args.mode]
 
     try:
         client = AggregatorClient(args.host, args.port)
@@ -237,12 +212,12 @@ def main() -> int:
     with client:
         try:
             if args.product is None:
-                interactive(client, args.mode, args.limit, args.json)
+                interactive(client, mode, args.limit, args.json)
                 return 0
             if args.compare:
                 r, show = client.compare(args.product, args.compare), show_comparison
             else:
-                r, show = client.search(args.product, args.mode, args.limit), show_search
+                r, show = client.search(args.product, mode, args.limit), show_search
         except (ConnectionError, protocol.ProtocolError, socket.timeout) as exc:
             print(f"A conexão com o agregador falhou: {exc}", file=sys.stderr)
             return 1

@@ -1,0 +1,25 @@
+cenario,modo,rodada,tempo_ms,mercados_ok,status_alvo,tentativas_alvo,inicio_alvo_ms,fim_alvo_ms,erro_alvo
+Todos no ar,sequencial,1,3655.59,5,sucesso,1,284.28,794.97,
+Todos no ar,concorrente,1,1298.93,5,sucesso,1,0.21,569.94,
+Todos no ar,concorrente,2,1077.15,5,sucesso,1,0.25,494.05,
+Todos no ar,sequencial,2,3601.78,5,sucesso,1,324.67,794.55,
+Todos no ar,sequencial,3,3629.55,5,sucesso,1,294.32,737.96,
+Todos no ar,concorrente,3,1041.16,5,sucesso,1,0.32,460.28,
+Fora do ar antes,sequencial,1,6473.48,4,erro,4,279.87,3794.81,fora do ar (4 tentativas)
+Fora do ar antes,concorrente,1,3516.64,4,erro,4,0.36,3515.98,fora do ar (4 tentativas)
+Fora do ar antes,concorrente,2,3509.83,4,erro,4,0.13,3509.42,fora do ar (4 tentativas)
+Fora do ar antes,sequencial,2,6909.47,4,erro,4,303.82,3815.21,fora do ar (4 tentativas)
+Fora do ar antes,sequencial,3,6621.06,4,erro,4,278.37,3791.18,fora do ar (4 tentativas)
+Fora do ar antes,concorrente,3,3512.95,4,erro,4,0.21,3512.47,fora do ar (4 tentativas)
+Cai durante,sequencial,1,6480.53,4,erro,4,292.96,3820.56,fora do ar (4 tentativas)
+Cai durante,concorrente,1,3821.52,4,erro,4,0.18,3821.12,fora do ar (4 tentativas)
+Cai durante,concorrente,2,3812.34,4,erro,4,0.17,3812.07,fora do ar (4 tentativas)
+Cai durante,sequencial,2,6831.42,4,erro,4,309.57,3821.28,fora do ar (4 tentativas)
+Cai durante,sequencial,3,6914.16,4,erro,4,294.72,3823.05,fora do ar (4 tentativas)
+Cai durante,concorrente,3,3822.51,4,erro,4,0.19,3822.07,fora do ar (4 tentativas)
+Cai e volta,sequencial,1,5258.58,5,sucesso,3,331.26,2345.17,
+Cai e volta,concorrente,1,2296.86,5,sucesso,3,0.21,2296.34,
+Cai e volta,concorrente,2,2338.84,5,sucesso,3,0.09,2338.34,
+Cai e volta,sequencial,2,5275.83,5,sucesso,3,289.51,2307.51,
+Cai e volta,sequencial,3,5221.57,5,sucesso,3,334.9,2345.65,
+Cai e volta,concorrente,3,2360.79,5,sucesso,3,0.19,2360.51,

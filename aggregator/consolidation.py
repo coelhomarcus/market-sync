@@ -1,4 +1,4 @@
-"""Junta as respostas dos mercados: menor preço, ordenação e cesta mais barata.
+"""Junta as respostas dos mercados: menor preço e ordenação.
 
 Funções puras (sem rede): recebem a lista de MarketResult e montam o JSON da API.
 """
@@ -77,26 +77,3 @@ def search_response(results: list[MarketResult], record: dict, category: str, so
         "error_count": record["error_count"],
     }
 
-
-def basket_response(wanted: dict[str, int], results: list[MarketResult], record: dict) -> dict:
-    """Total da cesta em cada mercado; o mais barato é o de menor total entre os que têm tudo."""
-    per_market = []
-    for r in results:
-        if r.ok:
-            per_market.append({"market_id": r.market_id, "market_name": r.market_name, "ok": True,
-                               "total": r.data["total"], "missing": r.data["missing"], "complete": not r.data["missing"]})
-        else:
-            per_market.append({"market_id": r.market_id, "market_name": r.market_name, "ok": False, "error": r.error})
-
-    # primeiro quem respondeu e tem tudo, do menor total ao maior
-    per_market.sort(key=lambda m: (not m["ok"], not m.get("complete"), m.get("total", 0)))
-    cheapest = per_market[0] if per_market and per_market[0].get("complete") else None
-    return {
-        "request_id": record["request_id"],
-        "mode": record["mode"],
-        "total_ms": record["total_ms"],
-        "items": wanted,
-        "markets": per_market,
-        "cheapest": cheapest,
-        "timings": record["markets"],
-    }

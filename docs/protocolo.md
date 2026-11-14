@@ -4,10 +4,10 @@ O sistema tem dois trechos em TCP puro, e os dois usam o mesmo enquadramento (*f
 
 | Trecho | Porta | Quem abre a conexão | Mensagens |
 |---|---|---|---|
-| Cliente → agregador | 5050 | `cliente/`, `experimentos/` | `{"operacao": ...}` no formato sugerido pelo enunciado (seção 2) |
-| Agregador → supermercados | 5001–5005 | `agregador/consulta_mercado.py` | `{"cmd": ...}`, comandos internos curtos (seção 3) |
+| Cliente → agregador | 5050 | `client/`, `experiments/` | `{"operacao": ...}` no formato sugerido pelo enunciado (seção 2) |
+| Agregador → supermercados | 5001–5005 | `aggregator/market_query.py` | `{"cmd": ...}`, comandos internos curtos (seção 3) |
 
-A loja web conversa com o agregador por HTTP (três rotas, ver `arquitetura.md`); por trás, as consultas aos supermercados são as mesmas.
+Não há outro protocolo no caminho: toda conversa entre os processos é TCP com as mensagens abaixo.
 
 ## 1. Enquadramento: uma mensagem JSON por linha
 
@@ -26,11 +26,11 @@ O TCP entrega um **fluxo de bytes** confiável e ordenado, mas não preserva fro
 - Limite de 16 MB por linha, para que uma "linha" sem fim não esgote a memória.
 - Se a conexão fecha antes do primeiro byte, `receive` devolve `(None, 0)` (fim normal). Se fecha no meio de uma linha, ou o JSON é inválido, levanta `ProtocolError`.
 
-Implementação: `backend/comum/protocolo.py` (`send` e `receive`, usados pelos quatro lados).
+Implementação: `common/protocol.py` (`send` e `receive`, usados pelos quatro lados).
 
 ## 2. Cliente ↔ agregador (porta 5050)
 
-Servidor: `agregador/servidor_tcp.py`. Cliente: `backend/cliente/` (classe `ClienteAgregador`).
+Servidor: `aggregator/tcp_server.py`. Cliente: `client/connection.py` (classe `AggregatorClient`).
 
 ### Regras gerais
 
@@ -40,7 +40,7 @@ Servidor: `agregador/servidor_tcp.py`. Cliente: `backend/cliente/` (classe `Clie
   - `"parcial"`: a pesquisa foi feita, mas algum supermercado não respondeu (os outros resultados vêm normalmente);
   - `"erro"`: o pedido não pôde ser atendido; vêm também `codigo` e `mensagem`.
 - Uma conexão pode levar **várias operações seguidas**, sempre uma pergunta e uma resposta por vez. O cliente de terminal abre a conexão no início da sessão e só a encerra ao sair.
-- Modos aceitos: `"sequencial"` e `"concorrente"` (padrão `"concorrente"`).
+- Modos aceitos: `"sequencial"` e `"concorrente"` (padrão `"concorrente"`). No cliente de terminal, `/seq` e `/con` (ou `--mode seq|con`) escolhem o valor enviado.
 
 ### consultar — pesquisar um produto
 
@@ -81,19 +81,6 @@ Servidor: `agregador/servidor_tcp.py`. Cliente: `backend/cliente/` (classe `Clie
 
 `repeticoes` vai de 1 a 10. A ordem dos modos alterna a cada rodada para nenhum deles levar vantagem.
 
-### cesta — total de uma cesta em cada supermercado
-
-```json
-→ {"operacao": "cesta", "modo": "concorrente",
-   "itens": [{"produto": "leite-integral-pasto-alto-1-l", "quantidade": 2}, {"produto": "cafe-torrado-...", "quantidade": 1}]}
-← {"operacao": "cesta", "status": "sucesso", "modo": "concorrente", "tempo_total_ms": 1230.5,
-   "totais": [{"fonte": "SuperVila", "status": "sucesso", "total": 12.67, "completa": true, "faltando": [], "erro": null}, ...],
-   "mais_barato": {"fonte": "SuperVila", "total": 12.67},
-   "mercados": [...]}
-```
-
-`produto` aqui é o `slug` devolvido pela operação `consultar`. `totais` vem do menor para o maior, primeiro as cestas completas; `mais_barato` só considera cestas completas (é `null` se nenhum supermercado tem tudo).
-
 ### mercados — situação de cada supermercado
 
 ```json
@@ -107,8 +94,8 @@ Servidor: `agregador/servidor_tcp.py`. Cliente: `backend/cliente/` (classe `Clie
 
 ```json
 → {"operacao": "configurar", "mercado": "ipe", "latencia_ms": 2500}
-→ {"operacao": "configurar", "mercado": "ipe", "online": false}
-← {"operacao": "configurar", "status": "sucesso", "mercado": "ipe", "fonte": "Mercadinho Ipê", "online": false, "latencia_ms": 2500}
+→ {"operacao": "configurar", "mercado": "supervila", "online": false}
+← {"operacao": "configurar", "status": "sucesso", "mercado": "supervila", "fonte": "SuperVila", "online": false, "latencia_ms": 500}
 ```
 
 O agregador repassa a mudança ao supermercado com o comando `CONFIG` (seção 3). `latencia_ms` vai de 0 a 10 000.
@@ -129,7 +116,7 @@ Depois de responder, o agregador fecha o socket.
 | `MENSAGEM_INVALIDA` | A linha não é JSON válido ou não é um objeto. | Sim |
 | `MENSAGEM_INVALIDA` | A conexão fechou no meio de uma linha, ou a linha passou de 16 MB. | Não (o agregador fecha) |
 | `OPERACAO_DESCONHECIDA` | `operacao` ausente ou desconhecida. | Sim |
-| `PARAMETRO_INVALIDO` | Falta `produto`, `modo` inválido, `limite`/`repeticoes`/`quantidade` fora da faixa, `itens` vazio. | Sim |
+| `PARAMETRO_INVALIDO` | Falta `produto`, `modo` inválido, `limite`/`repeticoes` fora da faixa, `online` que não é booleano. | Sim |
 | `MERCADO_DESCONHECIDO` | `configurar` com um id de supermercado que não existe. | Sim |
 | `MERCADO_INDISPONIVEL` | `configurar` num supermercado cujo processo não responde. | Sim |
 | `NENHUM_MERCADO_RESPONDEU` | `consultar` sem nenhum supermercado respondendo. Vem com `mercados` explicando cada falha. | Sim |
@@ -158,25 +145,17 @@ Toda requisição tem o campo `cmd`. Toda resposta tem `ok`; quando `ok` é verd
 ← {"ok": true, "data": {"online": true, "latency_ms": 300, "products": 1689,
     "db_bytes": 1003520, "requests_served": 12, "thread_count": 2}, "cpu_ms": 0.2}
 ```
-`STATUS` e `CONFIG` respondem mesmo com o mercado fora do ar (uso administrativo). Toda resposta traz `cpu_ms`, a CPU que a thread do mercado gastou, e `thread`, o nome da thread do mercado que atendeu a conexão (por exemplo `"Thread-7"`; o painel do agregador mostra).
+`STATUS` e `CONFIG` respondem mesmo com o mercado fora do ar (uso administrativo). Toda resposta traz `cpu_ms`, a CPU que a thread do mercado gastou, e `thread`, o nome da thread do mercado que atendeu a conexão (por exemplo `"conexão nº 7"`: cada conexão é atendida por uma thread nova; o painel do agregador mostra).
 
 ### SEARCH
 ```json
 → {"cmd": "SEARCH", "q": "feijão"}
 ← {"ok": true, "data": {"items": [
     {"slug": "feijao-carioca-bom-campo-1-kg", "name": "Feijão Carioca", "brand": "Bom Campo",
-     "category": "Mercearia", "unit": "1 kg", "image": "feijao-carioca-1kg",
+     "category": "Mercearia", "unit": "1 kg",
      "price": 7.69, "stock": 81, "sort_order": 1203}, ...]}}
 ```
-A busca ignora acentos e maiúsculas, exige que todas as palavras apareçam (nome, marca, categoria, tamanho ou palavras-chave) e devolve os itens ordenados por preço. `q` vazio devolve o sortimento inteiro do mercado (de 1.352 a 1.690 itens, entre 270 e 340 KB por resposta). Categoria, ordenação e paginação são feitas pelo agregador, depois de juntar as ofertas dos cinco mercados.
-
-### BASKET
-```json
-→ {"cmd": "BASKET", "items": [{"slug": "arroz-branco-5kg", "qty": 1}, {"slug": "cafe-torrado-500g", "qty": 2}]}
-← {"ok": true, "data": {"total": 66.77, "missing": [],
-    "lines": [{"slug": "arroz-branco-5kg", "name": "Arroz Branco Tipo 1", "qty": 1, "price": 28.99, "subtotal": 28.99}, ...]}}
-```
-Itens que o mercado não vende ou estão sem estoque vão para `missing` e não entram no total.
+A busca ignora acentos e maiúsculas, exige que todas as palavras apareçam (nome, marca, categoria, tamanho ou palavras-chave) e devolve os itens ordenados por preço. `q` vazio devolve o sortimento inteiro do mercado (de 1.352 a 1.690 itens, entre 270 e 340 KB por resposta). O agrupamento por produto, a ordenação e o menor preço são feitos pelo agregador, depois de juntar as ofertas dos cinco mercados.
 
 ### CONFIG
 ```json
@@ -191,7 +170,7 @@ Ambos os campos são opcionais. Latência limitada a 0–10 000 ms.
 ← {"ok": false, "error": "comando desconhecido: 'DANCE'"}
 ```
 
-### Ciclo de uma consulta (lado do agregador, `agregador/consulta_mercado.py`)
+### Ciclo de uma consulta (lado do agregador, `aggregator/market_query.py`)
 
 1. `socket.create_connection((host, porta), timeout=3)` — cria o socket e faz o *three-way handshake*. Mede `connect_ms`.
 2. `protocol.send` — escreve a linha da pergunta.
@@ -213,9 +192,9 @@ As esperas crescem (*backoff* exponencial) para não bombardear um servidor que 
 
 | Trecho | Quem encerra | Como |
 |---|---|---|
-| Cliente → agregador | o cliente, normalmente | envia `{"operacao": "encerrar"}`, recebe a confirmação e o agregador fecha o socket (FIN). `ClienteAgregador` faz isso ao sair do `with`. |
+| Cliente → agregador | o cliente, normalmente | envia `{"operacao": "encerrar"}`, recebe a confirmação e o agregador fecha o socket (FIN). `AggregatorClient` faz isso ao sair do `with` (e o `/exit` do cliente). |
 | Cliente → agregador | o cliente, abruptamente | fecha o socket sem avisar (Ctrl+C, processo morto). O `readline()` do agregador recebe fim de arquivo, a thread do cliente termina e o contador de clientes conectados volta. Se a conexão cai no meio de uma linha, o agregador descarta o pedaço. |
-| Cliente → agregador | o agregador | depois de 5 minutos sem nenhuma mensagem, envia `TEMPO_ESGOTADO` e fecha. Ao desligar o agregador (Ctrl+C), as threads de cliente são *daemon* e o socket de escuta é fechado. |
+| Cliente → agregador | o agregador | depois de 5 minutos sem nenhuma mensagem, envia `TEMPO_ESGOTADO` e fecha. Ao desligar o agregador (Ctrl+C), ele para de aceitar conexões, espera até 7 s as pesquisas em andamento responderem e só então fecha. |
 | Agregador → supermercado | o agregador | uma conexão por consulta: lê a resposta e fecha (bloco `with`). Se passar de 3 s sem resposta, fecha por timeout. |
 | Agregador → supermercado | o supermercado | quando está "fora do ar", fecha a conexão sem responder; se cai durante a espera de uma consulta, a conexão em andamento também é fechada. O agregador trata isso como falha e tenta de novo. |
 
@@ -223,4 +202,4 @@ Os comandos administrativos (`STATUS`, `CONFIG`) continuam respondendo com o sup
 
 ## 6. Testes do protocolo
 
-`backend/tests/test_protocolo.py` verifica: ida e volta com acentos, uma mensagem = uma linha, mensagem enviada em pedaços de 7 bytes (fragmentação), duas mensagens grudadas, fechamento limpo, fechamento no meio da linha e JSON inválido. `test_estrategias.py` cobre o retry (desiste após 4 tentativas, sucesso quando o mercado volta no meio, esperas 0,1 → 0,2 → 0,4 s e o custo no sequencial). `test_servidor_tcp.py` cobre o trecho cliente ↔ agregador: formato das respostas, ordenação, várias operações na mesma conexão, cada código de erro, JSON inválido sem perder a conexão, desconexão abrupta, supermercado caindo durante a pesquisa e 8 clientes simultâneos.
+`tests/test_protocol.py` verifica: ida e volta com acentos, uma mensagem = uma linha, mensagem enviada em pedaços de 7 bytes (fragmentação), duas mensagens grudadas, fechamento limpo, fechamento no meio da linha e JSON inválido. `tests/test_strategies.py` cobre o retry (desiste após 4 tentativas, sucesso quando o mercado volta no meio, esperas crescentes e o custo no sequencial). `tests/test_tcp_server.py` cobre o trecho cliente ↔ agregador: formato das respostas, ordenação, várias operações na mesma conexão, cada código de erro, JSON inválido sem perder a conexão, desconexão abrupta, supermercado caindo durante a pesquisa, 8 clientes simultâneos e o encerramento que espera as pesquisas em andamento.

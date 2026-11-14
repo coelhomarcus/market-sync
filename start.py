@@ -3,10 +3,10 @@
 Uso (da raiz do projeto):
     .venv/bin/python start.py               # mostra cada pesquisa no terminal, ao vivo
     .venv/bin/python start.py --raw         # versão crua: cada chamada TCP linha a linha, com as mensagens
-    .venv/bin/python start.py --silencioso  # sem o log das pesquisas (bom para os experimentos)
+    .venv/bin/python start.py --quiet  # sem o log das pesquisas (bom para os experimentos)
 Ctrl+C encerra todos os processos.
 
-Este terminal vira o painel ao vivo do agregador (aggregator/display.py), em tela cheia:
+Este terminal vira o painel ao vivo do agregador (aggregator/display.py), com histórico rolável:
 cada pesquisa aparece como um quadro com uma barra por mercado. Cada supermercado grava
 o próprio log em logs/<id>.log (para ver: tail -f logs/aurora.log).
 """
@@ -46,7 +46,7 @@ def _interrupt(signum, frame):  # noqa: ARG001
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sobe os 5 supermercados e o agregador")
     parser.add_argument("--raw", action="store_true", help="mostra cada chamada linha a linha, em vez do painel gráfico")
-    parser.add_argument("--silencioso", dest="quiet", action="store_true", help="não mostra o painel das pesquisas")
+    parser.add_argument("--quiet", action="store_true", help="não mostra o painel das pesquisas")
     args = parser.parse_args()
 
     # trata Ctrl+C, `kill` e fechar o terminal do mesmo jeito, mesmo se o SIGINT vier ignorado (processo em background)
@@ -82,7 +82,7 @@ def main() -> int:
             print(f"  {'✔' if ok else '✘'} {m.name:<16} tcp://{MARKET_HOST}:{m.port}  latência {m.latency_ms} ms  "
                   f"(pid {dict(procs)[m.name].pid}{'' if args.raw else f', log em logs/{m.id}.log'})")
 
-        print(f"\n  {'Painel desligado (--silencioso).' if args.quiet else ('Modo raw: cada chamada aparece aqui embaixo, linha a linha.' if args.raw else 'As pesquisas aparecem aqui embaixo, ao vivo.')}"
+        print(f"\n  {'Painel desligado (--quiet).' if args.quiet else ('Modo raw: cada chamada aparece aqui embaixo, linha a linha.' if args.raw else 'As pesquisas aparecem aqui embaixo, ao vivo.')}"
               f"  Ctrl+C encerra tudo.", flush=True)
         aggregator = subprocess.Popen([sys.executable, "-m", "aggregator.tcp_server"], cwd=ROOT, env=env,
                                      start_new_session=True)
@@ -99,16 +99,17 @@ def main() -> int:
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal.SIG_IGN)  # Ctrl+C repetido não interrompe a limpeza
-        shutdown(procs)
+        # no painel gráfico quem avisa da espera é o próprio painel (um print aqui cairia no meio dele)
+        shutdown(procs, announce=args.raw or args.quiet or not sys.stdout.isatty())
         for log in log_files:
             log.close()
 
 
-def shutdown(procs: list[tuple[str, subprocess.Popen]]) -> None:
+def shutdown(procs: list[tuple[str, subprocess.Popen]], announce: bool = True) -> None:
     """Primeiro o agregador (que termina as pesquisas em andamento), depois os mercados. Um sinal para cada."""
     aggregator = [p for name, p in procs if name == "agregador"]
     markets = [p for name, p in procs if name != "agregador"]
-    if any(p.poll() is None for p in aggregator):
+    if announce and any(p.poll() is None for p in aggregator):
         notify("\n  Encerrando: esperando as pesquisas em andamento terminarem...")
     stop(aggregator, signal.SIGINT, SEARCH_WAIT_S + 2)
     stop(markets, signal.SIGINT, 3)

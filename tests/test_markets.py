@@ -37,14 +37,6 @@ def test_empty_query_returns_whole_assortment(market_cluster):
     assert len(items) == servers[0].market.products > 1000
 
 
-def test_basket_total(market_cluster):
-    servers, _ = market_cluster
-    slug = ask(servers[0].port, {"cmd": "SEARCH", "q": "arroz"})["data"]["items"][0]["slug"]
-    data = ask(servers[0].port, {"cmd": "BASKET", "items": [{"slug": slug, "qty": 2}, {"slug": "nao-existe", "qty": 1}]})["data"]
-    assert data["missing"] == ["nao-existe"]
-    assert data["total"] == round(data["lines"][0]["price"] * 2, 2)
-
-
 def test_unknown_command_returns_error(market_cluster):
     servers, _ = market_cluster
     resp = ask(servers[0].port, {"cmd": "DANCE"})

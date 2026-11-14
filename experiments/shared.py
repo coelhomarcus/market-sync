@@ -154,7 +154,7 @@ def run(experiments: list, quick: bool = False, measure: bool = True) -> int:
         try:
             client = AggregatorClient(timeout=120)
         except OSError as exc:
-            print(f"Agregador inacessível ({exc}). Rode antes: .venv/bin/python start.py --silencioso", file=sys.stderr)
+            print(f"Agregador inacessível ({exc}). Rode antes: .venv/bin/python start.py --quiet", file=sys.stderr)
             return 1
         with client:
             configure_all(client)
@@ -180,7 +180,7 @@ def run(experiments: list, quick: bool = False, measure: bool = True) -> int:
 
 
 def run_alone(exp) -> None:
-    """Para rodar um experimento sozinho:  python -m experiments.exp3_latency [--rapido] [--analisar]"""
-    quick = "--rapido" in sys.argv
-    measure = "--analisar" not in sys.argv
+    """Para rodar um experimento sozinho:  python -m experiments.exp3_latency [--quick] [--analyze]"""
+    quick = "--quick" in sys.argv
+    measure = "--analyze" not in sys.argv
     sys.exit(run([exp], quick=quick, measure=measure))

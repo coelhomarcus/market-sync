@@ -33,12 +33,12 @@ class Aggregator:
     def __init__(self, markets: list[MarketInfo]) -> None:
         self.markets = markets
 
-    def execute(self, mode: str, kind: str, payload: dict, query: str, source: str = "cliente_tcp") -> tuple[list[MarketResult], dict]:
+    def execute(self, mode: str, payload: dict, query: str, source: str = "cliente_tcp") -> tuple[list[MarketResult], dict]:
         """Roda a pesquisa nos mercados (sequencial ou concorrente) e devolve os resultados e as medições."""
         request_id = uuid.uuid4().hex[:8]
 
         def emit(type_: str, data: dict) -> None:  # chamado pelas threads de consulta
-            display.event(type_, {"request_id": request_id, "mode": mode, "kind": kind, **data})
+            display.event(type_, {"request_id": request_id, "mode": mode, **data})
 
         emit("request_start", {"query": query, "source": source})
         t0 = time.perf_counter()
@@ -49,7 +49,6 @@ class Aggregator:
         record = {
             "request_id": request_id,
             "mode": mode,
-            "kind": kind,  # search | basket
             "source": source,  # de onde veio o pedido (cliente_tcp)
             "query": query,
             "total_ms": total_ms,

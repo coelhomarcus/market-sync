@@ -3,7 +3,7 @@
 Configura atrasos artificiais nos supermercados (operação "configurar", por TCP) e
 compara os dois modos em cada cenário. Gera a tabela e o gráfico fig-09.
 
-Rodar sozinho:  .venv/bin/python -m experiments.exp3_latency   (com o start.py --silencioso no ar)
+Rodar sozinho:  .venv/bin/python -m experiments.exp3_latency   (com o start.py --quiet no ar)
 """
 
 from __future__ import annotations
