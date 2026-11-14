@@ -1,7 +1,7 @@
-"""Desenha os diagramas de modelagem do relatório (arquitetura e sequência) com matplotlib.
+"""Desenha os diagramas de modelagem do relatório (casos de uso, arquitetura e sequência) com matplotlib.
 
 Uso (da raiz do projeto):  backend/.venv/bin/python scripts/diagramas.py
-Gera docs/relatorio/figuras/fig-02-arquitetura.png e fig-12-sequencia.png.
+Gera docs/relatorio/figuras/fig-01-casos-de-uso.png, fig-02-arquitetura.png e fig-12-sequencia.png.
 """
 
 from __future__ import annotations
@@ -56,16 +56,27 @@ def arquitetura() -> None:
     caixa(ax, 9.7, 0.3, 3.6, 7.5, "5 processos de mercado")
 
     # clientes
-    caixa(ax, 0.4, 5.9, 2.7, 1.1, "Cliente de terminal", "pacotes cliente/ e experimentos/", destaque=True)
-    caixa(ax, 0.4, 3.9, 2.7, 1.1, "Loja (navegador)", "busca e cesta")
-    caixa(ax, 0.4, 1.0, 2.7, 1.1, "Painel (navegador)", "comparar modos, eventos")
+    caixa(ax, 0.4, 6.2, 2.7, 1.0, "Cliente de terminal", "python -m cliente", destaque=True)
+    caixa(ax, 0.4, 5.05, 2.7, 1.0, "Loja web", "busca, cesta, modo")
+
+    # terminal com o log
+    ax.add_patch(FancyBboxPatch((0.4, 0.55), 2.7, 2.35, boxstyle="round,pad=0,rounding_size=0.12", fc="#1f2326", ec="#1f2326"))
+    ax.text(0.55, 2.62, "Painel ao vivo (terminal)", fontsize=10, fontweight="bold", color="white", va="center")
+    painel = [("╭ \"arroz\" · concorrente ──", "#7fb3ff"), ("Aurora    ███········ ✔", "#7fb3ff"),
+              ("SuperVila █████······ ✔", "#7fb3ff"), ("Empório   ███████···· ✔", "#7fb3ff"),
+              ("Max       █████████·· ✔", "#7fb3ff"), ("Ipê       ███████████ ✔", "#7fb3ff"),
+              ("╰─ 1,18 s · 5 threads ─╯", "#c8f7c5")]
+    for k, (linha, cor_linha) in enumerate(painel):
+        ax.text(0.55, 2.28 - k * 0.235, linha, fontsize=7.6, color=cor_linha, family=["Menlo", "DejaVu Sans Mono"], va="center")
 
     # agregador
-    caixa(ax, 4.5, 5.9, 4.0, 1.1, "Servidor TCP · porta 5050", "uma thread por cliente conectado", destaque=True)
-    caixa(ax, 4.5, 4.6, 4.0, 1.0, "Rotas HTTP · porta 8000", "FastAPI, uma thread por requisição")
-    caixa(ax, 4.5, 3.3, 4.0, 1.0, "Estratégias de consulta", "sequencial: for · concorrente: 5 threads", destaque=True)
-    caixa(ax, 4.5, 2.0, 4.0, 1.0, "Cliente TCP dos mercados", "conecta, envia, espera, mede, retry")
-    caixa(ax, 4.5, 0.6, 4.0, 1.0, "EventBus + MetricsStore", "eventos ao vivo, histórico, CSV")
+    caixa(ax, 4.5, 6.3, 4.0, 0.85, "servidor_tcp.py · porta 5050", "uma thread por cliente", destaque=True)
+    caixa(ax, 4.5, 5.2, 4.0, 0.85, "api_web.py · porta 8000", "3 rotas HTTP da loja")
+    caixa(ax, 4.5, 4.25, 4.0, 0.8, "agregador.py", "escolhe a estratégia e mede o tempo")
+    caixa(ax, 4.5, 3.15, 1.9, 0.8, "sequencial.py", "um por vez", destaque=True, tam=10)
+    caixa(ax, 6.6, 3.15, 1.9, 0.8, "concorrente.py", "5 threads", destaque=True, tam=10)
+    caixa(ax, 4.5, 2.05, 4.0, 0.8, "consulta_mercado.py", "conecta, envia, espera, retry")
+    caixa(ax, 4.5, 0.6, 4.0, 0.8, "registro.py", "desenha o painel (Rich)")
 
     # mercados
     mercados = [("Mercado Aurora", "5001", "300"), ("SuperVila", "5002", "500"), ("Empório Sol", "5003", "700"),
@@ -75,19 +86,79 @@ def arquitetura() -> None:
         caixa(ax, 9.9, y - 0.45, 3.2, 1.0, nome, f"porta {porta} · {lat} ms · SQLite próprio")
 
     # setas
-    seta(ax, (3.1, 6.45), (4.5, 6.45), "TCP · JSON\npor linha", cor=AZUL, cor_texto=AZUL, dy=0.08)
-    seta(ax, (3.1, 4.45), (4.5, 5.1), "HTTP/JSON", dx=-0.1, dy=0.05)
-    seta(ax, (4.5, 1.1), (3.1, 1.55), "WebSocket", dx=0.1, dy=0.05)
-    ax.plot([8.5, 8.62, 8.62], [6.45, 6.45, 3.8], color=AZUL, lw=1.4)
-    seta(ax, (8.62, 3.8), (8.5, 3.8), cor=AZUL)
-    seta(ax, (6.5, 4.6), (6.5, 4.3))
-    seta(ax, (6.5, 3.3), (6.5, 3.0))
-    seta(ax, (6.5, 2.0), (6.5, 1.6), "eventos", dx=0.45, dy=-0.05)
+    seta(ax, (3.1, 6.72), (4.5, 6.72), "TCP · JSON\npor linha", cor=AZUL, cor_texto=AZUL, dy=0.08)
+    seta(ax, (3.1, 5.6), (4.5, 5.6), "HTTP", dy=0.06)
+    ax.plot([8.5, 8.62, 8.62], [6.72, 6.72, 4.65], color=AZUL, lw=1.4)
+    seta(ax, (8.62, 4.65), (8.5, 4.65), cor=AZUL)
+    seta(ax, (6.5, 5.2), (6.5, 5.05))
+    seta(ax, (5.45, 4.25), (5.45, 3.95))
+    seta(ax, (7.55, 4.25), (7.55, 3.95))
+    seta(ax, (5.45, 3.15), (5.45, 2.85))
+    seta(ax, (7.55, 3.15), (7.55, 2.85))
+    seta(ax, (6.5, 2.05), (6.5, 1.4), "eventos", dx=0.42, dy=0.15, ls="--")
+    seta(ax, (4.5, 1.0), (3.1, 1.0), "12 quadros/s", dy=0.06, ls="--")
     for y in ys:
-        seta(ax, (8.5, 2.5), (9.9, y + 0.05), cor=AZUL if y == ys[2] else LINHA)
+        seta(ax, (8.5, 2.45), (9.9, y + 0.05), cor=AZUL if y == ys[2] else LINHA)
     ax.text(9.15, 3.85, "TCP · JSON\npor linha", fontsize=9, color=AZUL, ha="center", va="bottom")
+    ax.text(11.5, 0.42, "cada mercado grava o log em logs/<mercado>.log", fontsize=8, color=CINZA, ha="center", va="center")
 
     fig.savefig(FIGURAS / "fig-02-arquitetura.png", dpi=110, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def ator(ax, x, y, nome):
+    """Bonequinho UML de um ator, com o nome embaixo."""
+    ax.add_patch(plt.Circle((x, y + 0.55), 0.17, fill=False, ec=CINZA, lw=1.6))
+    ax.plot([x, x], [y + 0.38, y - 0.05], color=CINZA, lw=1.6)
+    ax.plot([x - 0.3, x + 0.3], [y + 0.22, y + 0.22], color=CINZA, lw=1.6)
+    ax.plot([x, x - 0.25], [y - 0.05, y - 0.45], color=CINZA, lw=1.6)
+    ax.plot([x, x + 0.25], [y - 0.05, y - 0.45], color=CINZA, lw=1.6)
+    ax.text(x, y - 0.62, nome, ha="center", va="top", fontsize=11, fontweight="bold", color=TEXTO)
+
+
+def casos_de_uso() -> None:
+    from matplotlib.patches import Ellipse
+
+    fig, ax = plt.subplots(figsize=(13, 9.6))
+    ax.set_xlim(0, 13)
+    ax.set_ylim(0, 9.6)
+    ax.axis("off")
+    ax.text(0.2, 9.35, "Todo caso de uso que busca preços passa pela consulta TCP aos mercados",
+            fontsize=14, fontweight="bold", color=TEXTO, va="center")
+    ax.add_patch(FancyBboxPatch((2.6, 0.3), 8.0, 8.6, boxstyle="round,pad=0,rounding_size=0.15", fc="white", ec=LINHA, lw=1.4))
+    ax.text(2.85, 8.62, "Comparador de Preços", fontsize=11, fontweight="bold", color=CINZA, va="center")
+
+    casos = ["UC01 Pesquisar produto", "UC02 Comparar preços de um produto", "UC03 Escolher o modo de consulta",
+             "UC04 Montar e comparar cesta", "UC05 Acompanhar as consultas no terminal", "UC06 Comparar modos / experimentos",
+             "UC07 Exportar resultados (CSV)", "UC08 Configurar ou derrubar mercado"]
+    cx, w, h = 5.3, 4.6, 0.66
+    ys = [8.0 - k * 0.98 for k in range(len(casos))]
+    for nome, y in zip(casos, ys):
+        ax.add_patch(Ellipse((cx, y), w, h, fc="white", ec=LINHA, lw=1.4))
+        ax.text(cx, y, nome, ha="center", va="center", fontsize=10.5, color=TEXTO)
+    uc9 = (9.15, 4.6)
+    ax.add_patch(Ellipse(uc9, 2.5, 1.15, fc=AZUL_CLARO, ec=AZUL, lw=2))
+    ax.text(*uc9, "UC09 Consultar\nmercados via TCP", ha="center", va="center", fontsize=11, fontweight="bold", color=TEXTO)
+
+    consumidor, avaliador, servico = (1.2, 6.6), (1.2, 2.6), (12.1, 4.6)
+    ator(ax, *consumidor, "Consumidor")
+    ator(ax, *avaliador, "Avaliador /\nOperador")
+    ator(ax, *servico, "Serviço de\nmercado")
+
+    borda = cx - w / 2
+    for k in (0, 1, 2, 3):
+        ax.plot([consumidor[0] + 0.35, borda], [consumidor[1] + 0.2, ys[k]], color=LINHA, lw=1.3)
+    for k in (2, 4, 5, 6, 7):
+        ax.plot([avaliador[0] + 0.35, borda], [avaliador[1] + 0.2, ys[k]], color=LINHA, lw=1.3)
+    ax.plot([uc9[0] + 1.25, servico[0] - 0.35], [uc9[1], servico[1] + 0.2], color=LINHA, lw=1.3)
+    for k in (0, 1, 3, 5):
+        inicio = (cx + w / 2 - 0.05, ys[k])
+        fim = (uc9[0] - 0.9, uc9[1] + (0.45 if ys[k] > uc9[1] else -0.45))
+        ax.add_patch(FancyArrowPatch(inicio, fim, arrowstyle="-|>", mutation_scale=11, color="#9a9a8f", lw=1.2, ls="--"))
+    ax.text(8.15, 6.7, "«include»", fontsize=9, color=CINZA, ha="center")
+    ax.text(8.15, 3.55, "«include»", fontsize=9, color=CINZA, ha="center")
+
+    fig.savefig(FIGURAS / "fig-01-casos-de-uso.png", dpi=110, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -184,6 +255,7 @@ def sequencia() -> None:
 
 if __name__ == "__main__":
     FIGURAS.mkdir(parents=True, exist_ok=True)
+    casos_de_uso()
     arquitetura()
     sequencia()
-    print("ok:", FIGURAS / "fig-02-arquitetura.png", FIGURAS / "fig-12-sequencia.png")
+    print("ok: fig-01-casos-de-uso.png, fig-02-arquitetura.png, fig-12-sequencia.png")

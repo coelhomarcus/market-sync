@@ -7,7 +7,7 @@ O sistema tem dois trechos em TCP puro, e os dois usam o mesmo enquadramento (*f
 | Cliente → agregador | 5050 | `cliente/`, `experimentos/` | `{"operacao": ...}` no formato sugerido pelo enunciado (seção 2) |
 | Agregador → supermercados | 5001–5005 | `agregador/consulta_mercado.py` | `{"cmd": ...}`, comandos internos curtos (seção 3) |
 
-A interface web conversa com o agregador por HTTP e WebSocket (ver `arquitetura.md`); por trás, as consultas aos supermercados são as mesmas.
+A loja web conversa com o agregador por HTTP (três rotas, ver `arquitetura.md`); por trás, as consultas aos supermercados são as mesmas.
 
 ## 1. Enquadramento: uma mensagem JSON por linha
 
@@ -158,7 +158,7 @@ Toda requisição tem o campo `cmd`. Toda resposta tem `ok`; quando `ok` é verd
 ← {"ok": true, "data": {"online": true, "latency_ms": 300, "products": 1689,
     "db_bytes": 1003520, "requests_served": 12, "thread_count": 2}, "cpu_ms": 0.2}
 ```
-`STATUS` e `CONFIG` respondem mesmo com o mercado fora do ar (uso administrativo). Toda resposta traz `cpu_ms`, a CPU que a thread do mercado gastou.
+`STATUS` e `CONFIG` respondem mesmo com o mercado fora do ar (uso administrativo). Toda resposta traz `cpu_ms`, a CPU que a thread do mercado gastou, e `thread`, o nome da thread do mercado que atendeu a conexão (por exemplo `"Thread-7"`; o painel do agregador mostra).
 
 ### SEARCH
 ```json

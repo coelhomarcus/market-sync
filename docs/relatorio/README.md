@@ -12,7 +12,7 @@
 
 | Figura no texto | Arquivo | Seção | Como é gerada |
 |---|---|---|---|
-| 1. Casos de uso | `fig-01-casos-de-uso.png` | 3.1 | diagrama |
+| 1. Casos de uso | `fig-01-casos-de-uso.png` | 3.1 | `scripts/diagramas.py` |
 | 2. Arquitetura | `fig-02-arquitetura.png` | 3.2 | `scripts/diagramas.py` |
 | 3. Sequência de uma pesquisa | `fig-12-sequencia.png` | 3.3 | `scripts/diagramas.py` |
 | 4. Uma consulta em detalhe | `fig-03-gantt-consulta.png` | 6.1 | `dados/01-gantt-consulta.csv` |
@@ -29,7 +29,7 @@
 ## Como refazer
 
 - Experimentos obrigatórios (com o `iniciar.py` rodando): `cd backend && .venv/bin/python -m experimentos`. Para refazer só tabelas e gráficos a partir dos CSV: `--analisar`.
-- Diagramas de arquitetura e sequência: `backend/.venv/bin/python scripts/diagramas.py` (da raiz do projeto).
+- Diagramas de casos de uso, arquitetura e sequência: `backend/.venv/bin/python scripts/diagramas.py` (da raiz do projeto).
 - DOCX e PDF: `backend/.venv/bin/python scripts/gerar_relatorio.py` (da raiz do projeto; precisa do LibreOffice). O caminho é Markdown → HTML com as figuras embutidas → LibreOffice → DOCX → PDF, e leva poucos segundos. `--html` guarda também o HTML intermediário.
 
 O roteiro e a discussão de cada experimento estão em [`../experimentos.md`](../experimentos.md).

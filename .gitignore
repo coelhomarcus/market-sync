@@ -3,8 +3,6 @@ backend/.venv/
 __pycache__/
 .pytest_cache/
 backend/data/*.db
+backend/logs/
 
-# Front
-frontend/node_modules/
-frontend/dist/
 .claude/

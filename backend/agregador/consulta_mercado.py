@@ -19,7 +19,7 @@ from typing import Callable
 from comum import config, protocolo
 from comum.config import MarketInfo
 
-Emit = Callable[[str, dict], None]  # publica um evento para o painel ao vivo
+Emit = Callable[[str, dict], None]  # avisa um passo da consulta (o registro.py escreve no terminal)
 
 
 class MarketDown(ConnectionError):
@@ -41,7 +41,8 @@ class MarketResult:
     bytes_sent: int = 0
     bytes_received: int = 0
     cpu_ms: float = 0.0  # CPU gasta nesta consulta: nossa thread + a thread do mercado
-    thread: str = ""
+    thread: str = ""  # thread do agregador que fez a consulta
+    server_thread: str = ""  # thread do mercado que atendeu a conexão
 
     @property
     def duration_ms(self) -> float:
@@ -59,16 +60,30 @@ def elapsed_ms(since: float) -> float:
     return round((time.perf_counter() - since) * 1000, 2)
 
 
-def ask_once(market: MarketInfo, payload: dict, timeout: float, result: MarketResult) -> dict:
-    """Uma ida e volta TCP: conecta, envia a pergunta, espera a resposta."""
+def ask_once(market: MarketInfo, payload: dict, timeout: float, result: MarketResult,
+             emit: Emit | None = None, t0: float | None = None) -> dict:
+    """Uma ida e volta TCP: conecta, envia a pergunta, espera a resposta, fecha.
+
+    Cada passo vira um evento (tcp_connect, tcp_send, tcp_recv, tcp_close), que o modo
+    raw do terminal (iniciar.py --raw) mostra linha a linha.
+    """
+    emit = emit or (lambda _type, _data: None)
+    t0 = time.perf_counter() if t0 is None else t0
+    base = {"market": market.id, "thread": result.thread, "attempt": result.attempts}
     start = time.perf_counter()
     with socket.create_connection((config.MARKET_HOST, market.port), timeout=timeout) as sock:
         result.connect_ms = elapsed_ms(start)
+        emit("tcp_connect", {**base, "t_ms": elapsed_ms(t0), "connect_ms": result.connect_ms,
+                             "local_port": sock.getsockname()[1], "port": market.port})
         with sock.makefile("rwb") as stream:
             result.bytes_sent = protocolo.send(stream, payload)
+            emit("tcp_send", {**base, "t_ms": elapsed_ms(t0), "bytes": result.bytes_sent, "message": payload})
             sent = time.perf_counter()
             response, result.bytes_received = protocolo.receive(stream)
             result.wait_ms = elapsed_ms(sent)
+            emit("tcp_recv", {**base, "t_ms": elapsed_ms(t0), "bytes": result.bytes_received, "wait_ms": result.wait_ms,
+                              "message": response})
+    emit("tcp_close", {**base, "t_ms": elapsed_ms(t0)})
     if response is None:
         raise MarketDown("fechou a conexão sem responder")
     return response
@@ -97,8 +112,9 @@ def query_market(
     for attempt in range(1, retries + 2):
         result.attempts = attempt
         try:
-            response = ask_once(market, payload, timeout, result)
+            response = ask_once(market, payload, timeout, result, emit, t0)
             server_cpu_ms = float(response.get("cpu_ms", 0.0))
+            result.server_thread = str(response.get("thread", ""))
             result.ok = bool(response.get("ok"))
             result.data = response.get("data")
             result.error = None if result.ok else response.get("error", "erro desconhecido")
@@ -109,7 +125,8 @@ def query_market(
             if attempt > retries:
                 break
             wait_s = config.RETRY_WAIT_S * 2 ** (attempt - 1)
-            emit("market_retry", {"market": market.id, "t_ms": elapsed_ms(t0), "attempt": attempt, "wait_ms": round(wait_s * 1000)})
+            emit("market_retry", {"market": market.id, "t_ms": elapsed_ms(t0), "attempt": attempt, "wait_ms": round(wait_s * 1000),
+                                  "thread": result.thread, "reason": reason})
             time.sleep(wait_s)
         except socket.timeout:
             result.error = f"tempo esgotado ({timeout:.1f} s)"
@@ -124,8 +141,8 @@ def query_market(
         data = result.data or {}
         count = len(data.get("items", data.get("lines", data.get("points", []))))
         emit("market_response", {"market": market.id, "t_ms": result.end_ms, "duration_ms": result.duration_ms,
-                                 "count": count, "bytes": result.bytes_received, "attempts": result.attempts, "thread": result.thread})
+                                 "count": count, "bytes": result.bytes_received, "attempts": result.attempts, "thread": result.thread, "server_thread": result.server_thread})
     else:
         emit("market_error", {"market": market.id, "t_ms": result.end_ms, "duration_ms": result.duration_ms,
-                              "error": result.error, "attempts": result.attempts})
+                              "error": result.error, "attempts": result.attempts, "thread": result.thread})
     return result

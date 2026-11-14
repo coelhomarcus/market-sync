@@ -19,24 +19,28 @@ ThreadingTCPServer: uma thread por cliente conectado, então vários clientes s�
 atendidos ao mesmo tempo, e cada um deles ainda pode disparar 5 threads de consulta
 aos mercados (modo concorrente).
 
-Rodar sozinho, sem a parte web:  python -m agregador.servidor_tcp   (dentro de backend/)
+Este é o processo do agregador: o iniciar.py o sobe com  python -m agregador.servidor_tcp
+No Ctrl+C, para de aceitar clientes e espera as pesquisas em andamento responderem.
 """
 
 from __future__ import annotations
 
+import itertools
 import logging
+import signal
 import socket
 import socketserver
+import statistics
 import threading
 
 from comum import config, protocolo
-from comum.config import MARKETS, MarketInfo
+from comum.config import MARKETS
 
-from . import consolidacao
+from . import consolidacao, registro
 from .agregador import Aggregator, MarketNotFound, MarketUnreachable
-from .metricas import summarize
 
 log = logging.getLogger("agregador.tcp")
+ESPERA_NO_ENCERRAMENTO_S = 7.0  # tempo máximo para as pesquisas em andamento terminarem (a mais longa: ~6 s)
 
 MODES = {"sequencial": "sequential", "concorrente": "concurrent", "sequential": "sequential", "concurrent": "concurrent"}
 MODE_NAMES = {"sequential": "sequencial", "concurrent": "concorrente"}
@@ -116,7 +120,10 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         self.aggregator = aggregator
         self.clients_connected = 0
         self.clients_served = 0
+        self._numeros = itertools.count(1)
         self._lock = threading.Lock()
+        self._em_andamento = 0  # pedidos sendo atendidos agora (para encerrar sem cortar ninguém)
+        self._sem_pedidos = threading.Condition(self._lock)
         self._thread: threading.Thread | None = None
         super().__init__((host or config.AGGREGATOR_HOST, config.AGGREGATOR_TCP_PORT if port is None else port), ClientHandler)
 
@@ -125,7 +132,7 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         return self.server_address[1]
 
     def start(self) -> None:
-        """Atende os clientes numa thread de fundo (usado quando roda junto com o FastAPI)."""
+        """Atende os clientes numa thread de fundo (usado nos testes)."""
         self._thread = threading.Thread(target=self.serve_forever, name="agregador-tcp-accept", daemon=True)
         self._thread.start()
 
@@ -133,14 +140,29 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         self.shutdown()
         self.server_close()
 
-    def client_joined(self) -> None:
+    def client_joined(self) -> int:
         with self._lock:
             self.clients_connected += 1
             self.clients_served += 1
+        return next(self._numeros)
 
     def client_left(self) -> None:
         with self._lock:
             self.clients_connected -= 1
+
+    def pedido_comecou(self) -> None:
+        with self._lock:
+            self._em_andamento += 1
+
+    def pedido_terminou(self) -> None:
+        with self._lock:
+            self._em_andamento -= 1
+            self._sem_pedidos.notify_all()
+
+    def esperar_pedidos(self, limite_s: float) -> bool:
+        """Espera os pedidos em andamento terminarem (até limite_s). True se todos terminaram."""
+        with self._sem_pedidos:
+            return self._sem_pedidos.wait_for(lambda: self._em_andamento == 0, timeout=limite_s)
 
     # ------------------------------------------------------------ operações
 
@@ -190,20 +212,21 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         for i in range(runs):  # alterna a ordem para nenhum modo levar vantagem
             for mode in ("sequential", "concurrent") if i % 2 == 0 else ("concurrent", "sequential"):
                 records.append(self.aggregator.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")[1])
-        summary = summarize(records)
+        tempos = {m: [r["total_ms"] for r in records if r["mode"] == m] for m in ("sequential", "concurrent")}
+        media = {m: round(statistics.fmean(t), 2) for m, t in tempos.items()}
         last = {r["mode"]: r for r in records}
         return {
             "status": "sucesso",
             "produto": query,
             "repeticoes": runs,
             **{MODE_NAMES[m]: {
-                "tempo_medio_ms": summary[m]["avg"],
-                "tempo_min_ms": summary[m]["min"],
-                "tempo_max_ms": summary[m]["max"],
+                "tempo_medio_ms": media[m],
+                "tempo_min_ms": min(tempos[m]),
+                "tempo_max_ms": max(tempos[m]),
                 "mercados_ok": last[m]["ok_count"],
                 "mercados": _markets_summary(last[m]),
             } for m in ("sequential", "concurrent")},
-            "speedup": summary["speedup"],
+            "speedup": round(media["sequential"] / media["concurrent"], 2),
         }
 
     def op_cesta(self, request: dict) -> dict:
@@ -282,21 +305,23 @@ class ClientHandler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         server: AggregatorTCPServer = self.server  # type: ignore[assignment]
-        server.client_joined()
+        numero = server.client_joined()
+        self.numero = numero
+        threading.current_thread().name = f"cliente-{numero}"
         peer = "%s:%d" % self.client_address[:2]
-        log.info("cliente %s conectou", peer)
+        registro.evento("client_connect", {"client": numero, "peer": peer, "connected": server.clients_connected})
         try:
             self.serve(server)
         except (ConnectionError, OSError) as exc:  # o cliente sumiu no meio da conversa
-            log.info("cliente %s caiu: %s", peer, exc)
+            registro.evento("client_drop", {"client": numero, "error": str(exc)})
         finally:
             server.client_left()
-            log.info("cliente %s desconectou", peer)
+            registro.evento("client_disconnect", {"client": numero, "connected": server.clients_connected})
 
     def serve(self, server: AggregatorTCPServer) -> None:
         while True:
             try:
-                request, _ = protocolo.receive(self.rfile)
+                request, nbytes = protocolo.receive(self.rfile)
             except socket.timeout:
                 self.reply({"status": "erro", "codigo": "TEMPO_ESGOTADO", "mensagem": "conexão encerrada por inatividade"})
                 return
@@ -307,8 +332,10 @@ class ClientHandler(socketserver.StreamRequestHandler):
                 continue
             if request is None:  # o cliente fechou o socket
                 return
+            registro.evento("client_request", {"client": self.numero, "bytes": nbytes, "message": request})
 
             op = str(request.get("operacao", "")).strip().lower()
+            server.pedido_comecou()
             try:
                 response = {"operacao": op, **server.dispatch(request)}
             except RequestError as exc:
@@ -316,6 +343,8 @@ class ClientHandler(socketserver.StreamRequestHandler):
             except Exception as exc:  # noqa: BLE001 — um erro interno não derruba o agregador
                 log.exception("erro ao atender %s", request)
                 response = {"operacao": op, "status": "erro", "codigo": "ERRO_INTERNO", "mensagem": str(exc)}
+            finally:
+                server.pedido_terminou()
             if "id" in request:  # o cliente pode numerar os pedidos para casar com as respostas
                 response["id"] = request["id"]
             self.reply(response)
@@ -323,23 +352,36 @@ class ClientHandler(socketserver.StreamRequestHandler):
                 return
 
     def reply(self, message: dict) -> None:
-        protocolo.send(self.wfile, message)
+        nbytes = protocolo.send(self.wfile, message)
+        registro.evento("client_reply", {"client": getattr(self, "numero", 0), "bytes": nbytes, "message": message})
+
+
+def _interromper(signum, frame):  # noqa: ARG001
+    raise KeyboardInterrupt
 
 
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Agregador (somente TCP, sem a parte web)")
+    parser = argparse.ArgumentParser(description="Agregador: servidor TCP dos clientes (porta 5050)")
     parser.add_argument("--port", type=int, default=config.AGGREGATOR_TCP_PORT)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="[agregador] %(message)s")
-    markets: list[MarketInfo] = list(MARKETS)
-    with AggregatorTCPServer(Aggregator(markets), port=args.port) as server:
-        log.info("escutando em tcp://%s:%d", config.AGGREGATOR_HOST, server.port)
+    logging.basicConfig(level=logging.WARNING, format="[agregador] %(message)s")  # só erros inesperados
+    signal.signal(signal.SIGTERM, _interromper)  # `kill` encerra igual ao Ctrl+C
+
+    with AggregatorTCPServer(Aggregator(list(MARKETS)), port=args.port) as server:
+        print(f"  Agregador em tcp://{config.AGGREGATOR_HOST}:{server.port}   ·   "
+              f"cliente: .venv/bin/python -m cliente\n", flush=True)
+        registro.iniciar()
         try:
-            server.serve_forever()
+            server.serve_forever()  # thread principal: só faz accept(); cada cliente ganha uma thread
         except KeyboardInterrupt:
             pass
+        finally:
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                signal.signal(sig, signal.SIG_IGN)  # Ctrl+C repetido não interrompe a espera
+            server.esperar_pedidos(ESPERA_NO_ENCERRAMENTO_S)  # quem já pediu recebe a resposta
+            registro.parar()
 
 
 if __name__ == "__main__":

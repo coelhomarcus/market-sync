@@ -4,7 +4,7 @@ Este documento cobre a seção 9 do enunciado: os cinco experimentos obrigatóri
 
 ## Como reproduzir
 
-Com o sistema no ar (`cd backend && .venv/bin/python iniciar.py`), em outro terminal:
+Com o sistema no ar (`cd backend && .venv/bin/python iniciar.py --silencioso`, para o log das pesquisas não poluir o terminal), em outro terminal:
 
 ```bash
 cd backend && .venv/bin/python -m experimentos
@@ -155,7 +155,7 @@ O previsto limita cada latência ao timeout de 3 s.
 
 ## Experimentos complementares (13/11/2026)
 
-Feitos antes dos obrigatórios, pelo painel web e pela rota `POST /api/benchmark`, com as mesmas latências padrão e a mesma busca "arroz".
+Feitos antes dos obrigatórios, numa versão anterior do sistema que tinha um painel web de benchmark (removido depois para deixar a web só com a loja), com as mesmas latências padrão e a mesma busca "arroz".
 
 ### C1 — Número de mercados (adicionados do mais rápido ao mais lento), 5 buscas por ponto
 

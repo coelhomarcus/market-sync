@@ -10,7 +10,7 @@ Comandos (uma linha JSON cada, ver comum/protocolo.py):
     SEARCH  {"q": "arroz"}                         produtos que casam com a busca
     BASKET  {"items": [{"slug": "...", "qty": 2}]} preço da cesta neste mercado
     STATUS                                         situação do mercado (responde mesmo fora do ar)
-    CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (usado pelo painel)
+    CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (operação "configurar" do cliente)
 
 Uso:  python -m mercados.servidor --id aurora
 """
@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import random
 import socketserver
+import sys
 import threading
 import time
 from pathlib import Path
@@ -53,6 +55,7 @@ class Market:
         self.online = True
         self.down = threading.Event()  # sinalizado quando o mercado sai do ar: acorda quem está esperando
         self.requests_served = 0
+        self.connections = 0  # conexões recebidas até agora; cada uma é atendida por uma thread nova
         self.lock = threading.Lock()  # várias threads de conexão mexem nos campos acima
 
     def handle(self, cmd: str, request: dict) -> dict:
@@ -67,6 +70,12 @@ class Market:
             self.simulate_latency()
             return self.db.basket(request.get("items") or [])
         raise ValueError(f"comando desconhecido: {cmd!r}")
+
+    def new_connection(self) -> int:
+        """Conta mais uma conexão e devolve o número dela (1, 2, 3...)."""
+        with self.lock:
+            self.connections += 1
+            return self.connections
 
     def simulate_latency(self) -> None:
         """Finge que o mercado está longe/lento: espera a latência configurada.
@@ -118,18 +127,58 @@ class MarketHandler(socketserver.StreamRequestHandler):
             return
 
         cmd = str(request.get("cmd", "")).upper()
+        # o ThreadingTCPServer cria uma thread nova para cada conexão; ela ganha o nome da conexão que atende
+        # (conta só conexões que trazem um pedido: o teste de porta do iniciar.py não entra)
+        numero = market.new_connection()
+        thread = f"conexão nº {numero}"
+        threading.current_thread().name = thread
+        if cmd != "STATUS":  # STATUS é só verificação (operação "mercados" do cliente); não polui o log
+            host, porta = self.client_address[:2]
+            log.info("← %s %s  de %s:%d  [%s]", cmd, self.args(cmd, request), host, porta, thread)
         if not market.online and cmd not in ADMIN_COMMANDS:
+            log.info("%-6s fora do ar: fechou a conexão sem responder  [%s]", cmd, thread)
             return  # "fora do ar": fecha a conexão sem responder
 
+        inicio = time.perf_counter()
         cpu_start = time.thread_time()  # CPU só desta thread (o sleep da latência não conta)
         try:
             response = {"ok": True, "data": market.handle(cmd, request)}
         except WentDown:
+            log.info("%-6s saiu do ar no meio da consulta: conexão fechada  [%s]", cmd, thread)
             return  # caiu durante a consulta: fecha a conexão sem responder
         except Exception as exc:  # erro na pergunta vira resposta de erro, o servidor segue de pé
             response = {"ok": False, "error": str(exc)}
         response["cpu_ms"] = round((time.thread_time() - cpu_start) * 1000, 3)
-        protocolo.send(self.wfile, response)
+        # qual conexão (= qual thread) deste mercado atendeu; o agregador mostra no painel
+        response["thread"] = thread
+        nbytes = protocolo.send(self.wfile, response)
+        self.log_reply(cmd, response, nbytes, (time.perf_counter() - inicio) * 1000, thread)
+
+    @staticmethod
+    def args(cmd: str, request: dict) -> str:
+        if cmd == "SEARCH":
+            return f'"{request.get("q", "")}"'
+        if cmd == "BASKET":
+            return f"{len(request.get('items') or [])} itens"
+        if cmd == "CONFIG":
+            return " ".join(f"{k}={v}" for k, v in request.items() if k != "cmd")
+        return ""
+
+    @staticmethod
+    def log_reply(cmd: str, response: dict, nbytes: int, ms: float, thread: str) -> None:
+        """Uma linha por resposta enviada (STATUS fica de fora: é só verificação)."""
+        if cmd == "STATUS":
+            return
+        if not response["ok"]:
+            resumo = f"erro: {response['error']}"
+        elif cmd == "SEARCH":
+            resumo = f"{len(response['data']['items'])} itens"
+        elif cmd == "BASKET":
+            resumo = f"cesta R$ {response['data']['total']:.2f}"
+        else:
+            d = response["data"]
+            resumo = f"agora {'no ar' if d.get('online') else 'FORA DO AR'}, latência {d.get('latency_ms')} ms"
+        log.info("→ %s · %d B · %.0f ms  [%s]", resumo, nbytes, ms, thread)
 
 
 class MarketServer(socketserver.ThreadingTCPServer):
@@ -152,7 +201,14 @@ def main() -> None:
     parser.add_argument("--latency", type=int, help="latência simulada em ms")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format=f"[{args.id}] %(message)s")
+    silencioso = os.environ.get("SILENCIOSO", "") in ("1", "true", "sim")
+    # no modo raw do iniciar.py (--raw), este log vai para o mesmo terminal do agregador: horário em ms e cinza,
+    # para diferenciar o lado do servidor; no modo gráfico, vai para logs/<mercado>.log
+    formato = f"%(asctime)s.%(msecs)03d            [{args.id}] %(message)s"
+    if sys.stdout.isatty():
+        formato = f"\033[2m{formato}\033[0m"
+    logging.basicConfig(level=logging.WARNING if silencioso else logging.INFO, format=formato, datefmt="%H:%M:%S",
+                        stream=sys.stdout)
     market = Market(MARKETS_BY_ID[args.id], latency_ms=args.latency)
     with MarketServer(market) as server:
         log.info("%s escutando em %s:%d (latência %d ms)", market.info.name, MARKET_HOST, server.port, market.latency_ms)

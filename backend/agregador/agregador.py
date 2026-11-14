@@ -1,4 +1,8 @@
-"""O agregador: recebe uma consulta, pergunta aos mercados no modo escolhido e mede tudo."""
+"""O agregador: recebe uma pesquisa, consulta os mercados no modo escolhido e mede o tempo.
+
+Quem chama (servidor_tcp.py, a cada pedido de um cliente) só escolhe o modo;
+a diferença entre os modos está toda em sequencial.py e concorrente.py. Cada passo é mostrado no terminal por registro.py.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +12,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from comum.config import MarketInfo
 
-from . import estrategias
+from . import concorrente, registro, sequencial
 from .consulta_mercado import MarketResult, query_market
-from .eventos import EventBus
-from .metricas import MetricsStore
+
+ESTRATEGIAS = {
+    "sequential": sequencial.consultar,  # um mercado de cada vez
+    "concurrent": concorrente.consultar,  # todos ao mesmo tempo, uma thread por mercado
+}
 
 
 class MarketNotFound(KeyError):
@@ -25,45 +32,37 @@ class MarketUnreachable(RuntimeError):
 class Aggregator:
     def __init__(self, markets: list[MarketInfo]) -> None:
         self.markets = markets
-        self.events = EventBus()  # alimenta o painel ao vivo
-        self.metrics = MetricsStore()  # histórico de tempos
 
-    def execute(self, mode: str, kind: str, payload: dict, query: str, source: str = "loja") -> tuple[list[MarketResult], dict]:
-        """Roda a consulta nos mercados (sequencial ou concorrente) e registra as métricas."""
+    def execute(self, mode: str, kind: str, payload: dict, query: str, source: str = "cliente_tcp") -> tuple[list[MarketResult], dict]:
+        """Roda a pesquisa nos mercados (sequencial ou concorrente) e devolve os resultados e as medições."""
         request_id = uuid.uuid4().hex[:8]
 
-        def emit(type_: str, data: dict) -> None:
-            self.events.publish(type_, {"request_id": request_id, "mode": mode, "kind": kind, **data})
+        def emit(type_: str, data: dict) -> None:  # chamado pelas threads de consulta
+            registro.evento(type_, {"request_id": request_id, "mode": mode, "kind": kind, **data})
 
         emit("request_start", {"query": query, "source": source})
         t0 = time.perf_counter()
 
-        results = estrategias.run(mode, self.markets, payload, emit=emit, t0=t0)
+        results = ESTRATEGIAS[mode](self.markets, payload, emit=emit, t0=t0)
 
         total_ms = round((time.perf_counter() - t0) * 1000, 2)
-        cpu_ms = sum(r.cpu_ms for r in results)  # CPU de verdade, somando agregador e mercados
-        record = self.metrics.add({
+        record = {
             "request_id": request_id,
-            "ts": time.time(),
             "mode": mode,
             "kind": kind,  # search | basket
-            "source": source,  # loja | benchmark
+            "source": source,  # de onde veio o pedido (cliente_tcp)
             "query": query,
             "total_ms": total_ms,
             "ok_count": sum(r.ok for r in results),
             "error_count": sum(not r.ok for r in results),
             "markets": sorted((r.timing() for r in results), key=lambda t: t["start_ms"]),
-            "resources": {
-                "cpu_ms": round(cpu_ms, 2),
-                "cpu_util": round(cpu_ms / total_ms, 4) if total_ms else 0,  # fração do tempo em que houve CPU trabalhando
-                "threads": len({r.thread for r in results}),  # threads que conversaram com os mercados
-            },
-        })
-        emit("request_end", {"total_ms": total_ms, "ok_count": record["ok_count"], "error_count": record["error_count"], "record": record})
+            "threads": len({r.thread for r in results}),  # threads que conversaram com os mercados
+        }
+        emit("request_end", {k: record[k] for k in ("total_ms", "ok_count", "error_count", "threads")})
         return results, record
 
     # ------------------------------------------------------------ administração dos mercados
-    # Usado pelo painel (HTTP) e pelo cliente TCP: STATUS e CONFIG viajam por TCP até cada mercado.
+    # STATUS e CONFIG também viajam por TCP até cada mercado.
 
     def market_status(self, market: MarketInfo, payload: dict | None = None) -> dict:
         r = query_market(market, payload or {"cmd": "STATUS"}, timeout=1.5, retries=0)  # sem retry: resposta rápida
@@ -85,5 +84,5 @@ class Aggregator:
         status = self.market_status(market, {"cmd": "CONFIG", **changes})
         if not status["reachable"]:
             raise MarketUnreachable(f"{market.name} não respondeu: {status['error']}")
-        self.events.publish("market_config", {"market": market.id, "online": status["online"], "latency_ms": status["latency_ms"]})
+        registro.evento("market_config", {"market": market.id, "online": status["online"], "latency_ms": status["latency_ms"]})
         return status

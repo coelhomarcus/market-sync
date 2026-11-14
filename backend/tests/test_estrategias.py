@@ -3,7 +3,7 @@ import time
 
 from comum import config
 from agregador.consulta_mercado import query_market
-from agregador.estrategias import concurrent, sequential
+from agregador import concorrente, sequencial
 
 PAYLOAD = {"cmd": "SEARCH", "q": "arroz"}
 
@@ -16,8 +16,8 @@ def timed(fn, *args, **kwargs):
 
 def test_concurrent_is_faster_than_sequential(market_cluster):
     _, markets = market_cluster
-    seq, seq_ms = timed(sequential, markets, PAYLOAD)
-    conc, conc_ms = timed(concurrent, markets, PAYLOAD)
+    seq, seq_ms = timed(sequencial.consultar, markets, PAYLOAD)
+    conc, conc_ms = timed(concorrente.consultar, markets, PAYLOAD)
     assert all(r.ok for r in seq + conc)
     assert seq_ms >= sum(m.latency_ms for m in markets) * 0.95  # sequencial ≈ soma (1000 ms)
     assert conc_ms < max(m.latency_ms for m in markets) + 250  # concorrente ≈ maior latência (300 ms)
@@ -25,14 +25,14 @@ def test_concurrent_is_faster_than_sequential(market_cluster):
 
 def test_sequential_requests_do_not_overlap(market_cluster):
     _, markets = market_cluster
-    results = sequential(markets, PAYLOAD)
+    results = sequencial.consultar(markets, PAYLOAD)
     for prev, nxt in zip(results, results[1:]):
         assert nxt.start_ms >= prev.end_ms
 
 
 def test_concurrent_requests_overlap_and_use_distinct_threads(market_cluster):
     _, markets = market_cluster
-    results = concurrent(markets, PAYLOAD)
+    results = concorrente.consultar(markets, PAYLOAD)
     assert max(r.start_ms for r in results) < min(r.end_ms for r in results)
     assert len({r.thread for r in results}) == len(markets)
 
@@ -40,7 +40,7 @@ def test_concurrent_requests_overlap_and_use_distinct_threads(market_cluster):
 def test_offline_market_is_retried_then_skipped(market_cluster):
     servers, markets = market_cluster
     servers[2].market.configure({"online": False})
-    results = {r.market_id: r for r in concurrent(markets, PAYLOAD)}
+    results = {r.market_id: r for r in concorrente.consultar(markets, PAYLOAD)}
     down = results[markets[2].id]
     assert not down.ok and down.attempts == config.RETRIES + 1 and "fora do ar" in down.error
     assert sum(r.ok for r in results.values()) == len(markets) - 1
@@ -64,8 +64,8 @@ def test_retry_waits_grow_and_cost_time_in_sequential(market_cluster, monkeypatc
     monkeypatch.setattr(config, "RETRY_WAIT_S", 0.1)  # 0,1 + 0,2 + 0,4 = 0,7 s de espera
     servers[0].market.configure({"online": False})
     waits = []
-    _, seq_ms = timed(sequential, markets, PAYLOAD, emit=lambda t, d: t == "market_retry" and waits.append(d["wait_ms"]))
-    _, conc_ms = timed(concurrent, markets, PAYLOAD)
+    _, seq_ms = timed(sequencial.consultar, markets, PAYLOAD, emit=lambda t, d: t == "market_retry" and waits.append(d["wait_ms"]))
+    _, conc_ms = timed(concorrente.consultar, markets, PAYLOAD)
     assert waits == [100, 200, 400]
     assert seq_ms > 700 + 900  # espera do retry + os outros 4 mercados, um depois do outro
     assert conc_ms < seq_ms / 2  # no concorrente, o retry acontece enquanto os outros respondem
@@ -95,6 +95,6 @@ def test_bytes_received_are_measured(market_cluster):
 def test_events_are_emitted(market_cluster):
     _, markets = market_cluster
     events = []
-    concurrent(markets, PAYLOAD, emit=lambda t, d: events.append(t))
+    concorrente.consultar(markets, PAYLOAD, emit=lambda t, d: events.append(t))
     assert events.count("market_connect") == len(markets)
     assert events.count("market_response") == len(markets)

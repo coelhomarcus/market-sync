@@ -4,6 +4,7 @@ import threading
 
 import pytest
 
+from agregador import registro
 from comum import config
 from comum.config import MARKETS
 from mercados.gerar_bancos import seed_market
@@ -16,6 +17,12 @@ TEST_LATENCIES = [100, 150, 200, 250, 300]
 def fast_retry(monkeypatch):
     """Nos testes, as novas tentativas esperam 10 ms em vez de 0,5 s."""
     monkeypatch.setattr(config, "RETRY_WAIT_S", 0.01)
+
+
+@pytest.fixture(autouse=True)
+def terminal_silencioso(monkeypatch):
+    """O log das pesquisas fica desligado nos testes (test_registro.py liga quando precisa)."""
+    monkeypatch.setattr(registro, "ATIVO", False)
 
 
 @pytest.fixture(scope="session")

@@ -33,7 +33,6 @@ def merge_offers(results: list[MarketResult]) -> list[dict]:
                 "brand": item["brand"],
                 "category": item["category"],
                 "unit": item["unit"],
-                "image": f"/products/{item['image']}.jpg",
                 "order": item.get("sort_order", CATALOG_ORDER.get(item["slug"], 999_999)),
                 "offers": [],
             })
