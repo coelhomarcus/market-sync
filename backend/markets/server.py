@@ -9,7 +9,6 @@ socket() → bind() → listen() → accept():
 Comandos (uma linha JSON cada, ver protocol.py):
     SEARCH  {"q": "arroz"}                         produtos que casam com a busca
     BASKET  {"items": [{"slug": "...", "qty": 2}]} preço da cesta neste mercado
-    HISTORY {"slug": "...", "days": 90}            histórico de preço de um produto
     STATUS                                         situação do mercado (responde mesmo fora do ar)
     CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (usado pelo painel)
 
@@ -29,7 +28,7 @@ from pathlib import Path
 import protocol
 from config import MARKET_HOST, MARKETS_BY_ID, MarketInfo
 from markets.database import MarketDatabase
-from markets.seed import seed_market
+from markets.seed import is_ready, seed_market
 
 log = logging.getLogger("market")
 
@@ -42,9 +41,9 @@ class Market:
     def __init__(self, info: MarketInfo, db_path: Path | None = None, latency_ms: int | None = None, jitter: float = 0.15):
         self.info = info
         self.db = MarketDatabase(db_path or info.db_path)
-        if not self.db.path.exists():
+        if not is_ready(self.db.path):
             seed_market(info, self.db.path)
-        self.products, self.history_rows = self.db.counts()
+        self.products = self.db.count()
         self.latency_ms = info.latency_ms if latency_ms is None else latency_ms
         self.jitter = jitter  # variação aleatória da latência (±15%)
         self.online = True
@@ -62,9 +61,6 @@ class Market:
         if cmd == "BASKET":
             self.simulate_latency()
             return self.db.basket(request.get("items") or [])
-        if cmd == "HISTORY":
-            self.simulate_latency()
-            return {"points": self.db.history(str(request.get("slug", "")), int(request.get("days", 90)))}
         raise ValueError(f"comando desconhecido: {cmd!r}")
 
     def simulate_latency(self) -> None:
@@ -80,7 +76,6 @@ class Market:
                 "online": self.online,
                 "latency_ms": self.latency_ms,
                 "products": self.products,
-                "history_rows": self.history_rows,
                 "db_bytes": self.db.path.stat().st_size,
                 "requests_served": self.requests_served,
                 "thread_count": threading.active_count(),

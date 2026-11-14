@@ -24,8 +24,8 @@ Toda requisição tem o campo `cmd`. Toda resposta tem `ok`; quando `ok` é verd
 ### STATUS
 ```json
 → {"cmd": "STATUS"}
-← {"ok": true, "data": {"online": true, "latency_ms": 300, "products": 1690, "history_rows": 304200,
-    "db_bytes": 18042880, "requests_served": 12, "thread_count": 2}, "cpu_ms": 0.2}
+← {"ok": true, "data": {"online": true, "latency_ms": 300, "products": 1689,
+    "db_bytes": 1003520, "requests_served": 12, "thread_count": 2}, "cpu_ms": 0.2}
 ```
 `STATUS` e `CONFIG` respondem mesmo com o mercado fora do ar (uso administrativo). Toda resposta traz `cpu_ms`, a CPU que a thread do mercado gastou.
 
@@ -38,13 +38,6 @@ Toda requisição tem o campo `cmd`. Toda resposta tem `ok`; quando `ok` é verd
      "price": 7.69, "stock": 81, "sort_order": 1203}, ...]}}
 ```
 A busca ignora acentos e maiúsculas, exige que todas as palavras apareçam (nome, marca, categoria, tamanho ou palavras-chave) e devolve os itens ordenados por preço. `q` vazio devolve o sortimento inteiro do mercado (de 1.352 a 1.690 itens, entre 270 e 340 KB por resposta). Categoria, ordenação e paginação são feitas pelo agregador, depois de juntar as ofertas dos cinco mercados.
-
-### HISTORY
-```json
-→ {"cmd": "HISTORY", "slug": "feijao-carioca-bom-campo-1-kg", "days": 90}
-← {"ok": true, "data": {"points": [{"day": "2026-08-16", "price": 7.99}, ...]}}
-```
-Preço diário do produto nos últimos `days` dias (até 365), lido da tabela `price_history`.
 
 ### BASKET
 ```json

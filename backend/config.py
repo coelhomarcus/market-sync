@@ -21,6 +21,7 @@ RETRY_WAIT_S = 0.5  # espera antes da 1ª nova tentativa; dobra a cada vez (0,5 
 class MarketInfo:
     id: str
     name: str
+    short: str  # nome curto, para gráficos
     port: int
     latency_ms: int  # latência simulada inicial
     price_factor: float  # perfil de preço da loja (atacarejo mais barato etc.)
@@ -32,11 +33,11 @@ class MarketInfo:
 
 
 MARKETS: list[MarketInfo] = [
-    MarketInfo("aurora", "Mercado Aurora", 5001, 300, 1.00, "#16a34a"),
-    MarketInfo("supervila", "SuperVila", 5002, 500, 0.97, "#2563eb"),
-    MarketInfo("emporio-sol", "Empório Sol", 5003, 700, 1.10, "#ea580c"),
-    MarketInfo("max-atacarejo", "Max Atacarejo", 5004, 900, 0.88, "#9333ea"),
-    MarketInfo("ipe", "Mercadinho Ipê", 5005, 1200, 1.04, "#db2777"),
+    MarketInfo("aurora", "Mercado Aurora", "Aurora", 5001, 300, 1.00, "#16a34a"),
+    MarketInfo("supervila", "SuperVila", "SuperVila", 5002, 500, 0.97, "#2563eb"),
+    MarketInfo("emporio-sol", "Empório Sol", "Empório Sol", 5003, 700, 1.10, "#ea580c"),
+    MarketInfo("max-atacarejo", "Max Atacarejo", "Max", 5004, 900, 0.88, "#9333ea"),
+    MarketInfo("ipe", "Mercadinho Ipê", "Ipê", 5005, 1200, 1.04, "#db2777"),
 ]
 
 MARKETS_BY_ID = {m.id: m for m in MARKETS}

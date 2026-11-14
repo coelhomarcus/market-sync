@@ -16,20 +16,19 @@ class MarketDatabase:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        # uma conexão por consulta: uma conexão SQLite não pode ser dividida entre threads
-        conn = sqlite3.connect(self.path)
+        # uma conexão por consulta: uma conexão SQLite não pode ser dividida entre threads.
+        # Só leitura (mode=ro): se o arquivo sumir, dá erro em vez de criar um banco vazio.
+        conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
         finally:
             conn.close()
 
-    def counts(self) -> tuple[int, int]:
-        """(produtos, registros de preço histórico)."""
+    def count(self) -> int:
+        """Quantos produtos o mercado vende."""
         with self._connect() as db:
-            products = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-            history = db.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
-        return products, history
+            return db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
 
     def search(self, query: str) -> list[dict]:
         """Produtos cujo texto contém todas as palavras da busca, do mais barato ao mais caro."""
@@ -56,12 +55,3 @@ class MarketDatabase:
                 lines.append({"slug": slug, "name": row["name"], "brand": row["brand"], "unit": row["unit"],
                               "qty": qty, "price": row["price"], "subtotal": subtotal})
         return {"lines": lines, "missing": missing, "total": round(total, 2)}
-
-    def history(self, slug: str, days: int) -> list[dict]:
-        """Preço diário dos últimos `days` dias, do mais antigo ao mais novo."""
-        with self._connect() as db:
-            rows = db.execute(
-                "SELECT day, price FROM price_history WHERE slug = ? ORDER BY day DESC LIMIT ?",
-                (slug, max(1, min(days, 365))),
-            ).fetchall()
-        return [{"day": r["day"], "price": r["price"]} for r in reversed(rows)]

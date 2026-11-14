@@ -45,15 +45,6 @@ def test_basket_total(market_cluster):
     assert data["total"] == round(data["lines"][0]["price"] * 2, 2)
 
 
-def test_history_ends_at_current_price(market_cluster):
-    servers, _ = market_cluster
-    item = ask(servers[0].port, {"cmd": "SEARCH", "q": "cafe"})["data"]["items"][0]
-    points = ask(servers[0].port, {"cmd": "HISTORY", "slug": item["slug"], "days": 7})["data"]["points"]
-    assert len(points) == 7
-    assert [p["day"] for p in points] == sorted(p["day"] for p in points)
-    assert points[-1]["price"] == item["price"]
-
-
 def test_unknown_command_returns_error(market_cluster):
     servers, _ = market_cluster
     resp = ask(servers[0].port, {"cmd": "DANCE"})

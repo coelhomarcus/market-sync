@@ -5,7 +5,7 @@
 | Ator | Descrição |
 |---|---|
 | **Consumidor** | Pessoa que pesquisa produtos, compara preços e monta uma cesta de compras na loja (`/`). |
-| **Avaliador / Operador** | Professor ou membro do grupo que acompanha o painel (`/painel`), roda benchmarks, altera latência e derruba mercados para observar o comportamento do sistema. |
+| **Avaliador / Operador** | Professor ou membro do grupo que acompanha o painel (`/painel`), compara os modos, escolhe cenários (lento, timeout, fora do ar) para os mercados para observar o comportamento do sistema. |
 | **Serviço de mercado** (ator secundário) | Cada um dos 5 processos servidores TCP que respondem às consultas com dados do próprio SQLite. |
 
 ## Requisitos funcionais
@@ -20,14 +20,14 @@
 | RF06 | Oferecer duas rotas de consulta: sequencial e concorrente. | `GET /api/search/sequential` e `/concurrent` |
 | RF07 | Medir e comparar o tempo das consultas sequenciais e concorrentes. | Faixa de tempo na loja, painel, benchmark |
 | RF08 | Comparar uma cesta de compras e identificar o mercado de menor custo total (evolução sugerida no enunciado). | `POST /api/basket/{mode}`, gaveta "Sua cesta" |
-| RF09 | Indicar o custo da cesta comprando cada item onde ele é mais barato. | `best_mix` na resposta da cesta |
+| RF09 | Indicar os mercados que não têm todos os itens da cesta (a cesta mais barata só considera cestas completas). | `missing` / `complete` na resposta da cesta |
 | RF10 | Exibir em tempo real os eventos de cada conexão TCP (connect, resposta, erro). | WebSocket `/ws/events`, "Eventos ao vivo" |
 | RF11 | Exibir o diagrama de tempo (Gantt) das últimas consultas de cada modo. | "Linha do tempo das conexões TCP" |
 | RF12 | Rodar benchmark com N repetições e calcular média, mínimo, máximo, desvio padrão e speedup. | `POST /api/benchmark` |
 | RF13 | Exportar o histórico de métricas em CSV. | `GET /api/metrics/export.csv` |
-| RF14 | Permitir alterar a latência simulada de cada mercado e tirá-lo do ar. | Comando `CONFIG`, seção "Mercados" do painel |
+| RF14 | Permitir alterar a latência simulada de cada mercado e tirá-lo do ar. | Comando `CONFIG`, botões de cenário na seção "Mercados" |
 | RF15 | Filtrar por categoria, ordenar (destaques, menor preço, maior diferença, nome) e paginar os resultados. | Parâmetros de `GET /api/search/{mode}` |
-| RF16 | Exibir o histórico de preço de um produto em cada mercado. | Comando `HISTORY`, `GET /api/history/{slug}` |
+| RF16 | Comparar os dois modos lado a lado com a mesma busca. | Botão "Comparar os dois modos" em `/painel` |
 | RF17 | Medir e comparar o consumo de recursos (CPU, threads, memória) dos dois modos. | Seção "Consumo de recursos" do painel, colunas de recursos no CSV |
 
 ## Requisitos não funcionais
@@ -42,8 +42,8 @@
 | RNF06 | Protocolo robusto a fragmentação do TCP. | Uma mensagem JSON por linha, lida com `readline()` (`protocol.py`), testado com envio em pedaços de 7 bytes. |
 | RNF07 | Interface em português, utilizável em celular e acessível por teclado. | Layout responsivo, foco visível, rótulos ARIA. |
 | RNF08 | Reprodutibilidade dos dados. | `seed.py` usa semente fixa por mercado e data de referência fixa. |
-| RNF09 | Testabilidade. | 34 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |
-| RNF10 | Volume de dados realista. | 1.740 SKUs no catálogo, 7.692 produtos e 1,38 milhão de preços históricos nos 5 bancos (82 MB). |
+| RNF09 | Testabilidade. | 35 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |
+| RNF10 | Volume de dados realista. | 1.740 SKUs no catálogo e 7.730 produtos nos 5 bancos. |
 
 ## Casos de uso
 
@@ -83,7 +83,7 @@ flowchart LR
 - **Fluxo:** 1. O consumidor abre um produto. 2. O sistema lista os mercados do menor para o maior preço, com o selo "Menor preço" e a diferença de cada um para o mais barato. 3. Mercados sem o produto, sem estoque ou sem resposta aparecem separados.
 
 ### UC04 — Montar e comparar cesta
-- **Fluxo:** 1. O consumidor adiciona itens e quantidades. 2. Pede a comparação. 3. O agregador envia `BASKET` a cada mercado. 4. O sistema mostra o total por mercado, aponta a cesta completa mais barata e calcula o custo comprando cada item no mercado mais barato.
+- **Fluxo:** 1. O consumidor adiciona itens e quantidades. 2. Pede a comparação. 3. O agregador envia `BASKET` a cada mercado. 4. O sistema mostra o total por mercado, aponta a cesta completa mais barata e quantos itens faltam nos outros.
 - **Alternativo 4a:** nenhum mercado tem todos os itens; os totais parciais aparecem com a lista do que falta.
 
 ### UC06 — Rodar benchmark

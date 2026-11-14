@@ -1,5 +1,4 @@
 import { brl } from '../lib/format'
-import { MARKET_BY_ID } from '../lib/markets'
 import type { Product } from '../lib/types'
 import { useApp } from '../state/app'
 import { PriceTag } from './PriceTag'
@@ -23,7 +22,7 @@ export function ProductCard({ product, onOpen }: { product: Product; onOpen: () 
           <div>
             <PriceTag price={cheapest.price} label="a partir de" />
             <p className="mt-1.5 text-xs text-cinza">
-              no <span className="font-semibold text-tinta">{MARKET_BY_ID[cheapest.market_id]?.name ?? cheapest.market_name}</span>
+              no <span className="font-semibold text-tinta">{cheapest.market_name}</span>
             </p>
           </div>
         ) : (

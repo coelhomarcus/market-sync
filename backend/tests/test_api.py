@@ -38,20 +38,13 @@ def test_pagination_and_categories(client):
     assert all(p["category"] == "Bebidas" for p in bebidas["products"])
 
 
-def test_price_history_route(client):
-    slug = client.get("/api/search/concurrent?q=feijao").json()["products"][0]["slug"]
-    data = client.get(f"/api/history/{slug}", params={"days": 7}).json()
-    assert len(data["markets"]) == 5
-    assert any(len(m["points"]) == 7 for m in data["markets"])
-
-
 def test_basket_finds_cheapest_market(client):
     search = client.get("/api/search/concurrent?q=arroz&sort=economia").json()["products"]
     body = {"items": [{"slug": search[0]["slug"], "qty": 1}, {"slug": search[1]["slug"], "qty": 2}]}
     data = client.post("/api/basket/concurrent", json=body).json()
     complete = [m for m in data["markets"] if m.get("complete")]
     assert data["cheapest"]["total"] == min(m["total"] for m in complete)
-    assert data["best_mix"]["total"] <= data["cheapest"]["total"]
+    assert data["markets"][0] == data["cheapest"]
 
 
 def test_market_config_and_metrics(client):
@@ -95,3 +88,9 @@ def test_resources_are_measured(client):
     for res in by_mode.values():
         assert res["cpu_ms"] > 0
     assert all(m["cpu_ms"] > 0 for r in records for m in r["markets"])
+
+
+def test_market_status_has_display_info(client):
+    markets = client.get("/api/markets").json()
+    assert [m["short"] for m in markets] == ["Aurora", "SuperVila", "Empório Sol", "Max", "Ipê"]
+    assert all(m["reachable"] and m["default_latency_ms"] > 0 for m in markets)

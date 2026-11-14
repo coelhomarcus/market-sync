@@ -20,10 +20,10 @@ def fast_retry(monkeypatch):
 
 @pytest.fixture(scope="session")
 def market_dbs(tmp_path_factory):
-    """Gera os 5 bancos uma única vez (histórico curto para a suíte ficar rápida)."""
+    """Gera os 5 bancos uma única vez por execução dos testes."""
     folder = tmp_path_factory.mktemp("dbs")
     for market in MARKETS:
-        seed_market(market, folder / f"{market.id}.db", history_days=14)
+        seed_market(market, folder / f"{market.id}.db")
     return folder
 
 

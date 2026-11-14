@@ -14,7 +14,7 @@ import sys
 import time
 
 from config import BACKEND_DIR as BACKEND, MARKET_HOST, MARKETS
-from markets.seed import seed_all
+from markets.seed import is_ready, seed_all
 
 API_PORT = int(os.environ.get("API_PORT", "8000"))
 
@@ -39,7 +39,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, _interrupt)
     signal.signal(signal.SIGTERM, _interrupt)
 
-    if not all(m.db_path.exists() for m in MARKETS):
+    if not all(is_ready(m.db_path) for m in MARKETS):
         print("Gerando bancos SQLite...")
         seed_all()
 

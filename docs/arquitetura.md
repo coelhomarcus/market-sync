@@ -48,8 +48,8 @@ Três protocolos aparecem no sistema:
 | `backend/config.py` | Lista dos mercados (id, nome, porta, latência inicial, perfil de preço), timeout e retry. |
 | `backend/protocol.py` | Protocolo: cada mensagem é um JSON numa linha. `send` / `receive`. |
 | `backend/markets/catalog.py` | Catálogo gerado: 95 tipos × 10 marcas fictícias × sabores × tamanhos = 1.740 SKUs. |
-| `backend/markets/seed.py` | Gera um SQLite por mercado (sortimento próprio, preço, estoque, EAN e 180 dias de histórico de preço). |
-| `backend/markets/database.py` | Consultas SQL de um mercado (busca, cesta, histórico). |
+| `backend/markets/seed.py` | Gera um SQLite por mercado (sortimento próprio, preço, estoque e EAN). |
+| `backend/markets/database.py` | Consultas SQL de um mercado (busca e cesta). |
 | `backend/markets/server.py` | Servidor TCP de um mercado (`socketserver.ThreadingTCPServer`): uma thread por conexão. Simula latência e queda. |
 | `backend/aggregator/client.py` | `query_market`: conecta, envia, espera a resposta e mede. Se o mercado está fora do ar, tenta de novo (0,5 s → 1 s → 2 s). Nunca lança exceção. |
 | `backend/aggregator/strategies.py` | `sequential()` (um por vez) e `concurrent()` (`ThreadPoolExecutor`, uma thread por mercado). |
@@ -59,7 +59,7 @@ Três protocolos aparecem no sistema:
 | `backend/aggregator/metrics.py` | Histórico em memória, médias e CSV. |
 | `backend/aggregator/main.py` | Rotas FastAPI. |
 | `backend/run_all.py` | Sobe os 5 mercados e o agregador como subprocessos e encerra tudo no Ctrl+C. |
-| `frontend/` | React + TypeScript + Tailwind + Recharts. Loja, cesta e painel. |
+| `frontend/` | React + TypeScript + Tailwind. Loja, cesta e página "Comparar modos" (corrida, cenários dos mercados, eventos). Nomes e cores dos mercados vêm de `/api/markets`. |
 
 ## Modelo de threads
 
@@ -128,7 +128,7 @@ sequenceDiagram
 - **Uma conexão por consulta.** O cliente abre, usa e fecha a conexão. É simples, deixa explícito o custo do `connect` e evita compartilhar sockets entre threads. O servidor aceita várias mensagens na mesma conexão, então uma evolução com pool de conexões é possível.
 - **Erros como dados.** `query_market` nunca levanta exceção: timeout, conexão recusada e mercado fora do ar viram `MarketResult(ok=False, error=...)`. A estratégia concorrente nunca perde as respostas boas por causa de uma ruim.
 - **"Fora do ar" sem matar o processo.** O mercado continua aceitando conexões, mas fecha as de consulta sem responder; os comandos administrativos (`CONFIG`, `STATUS`) continuam funcionando para trazê-lo de volta. Para simular o processo morto de verdade, basta encerrar o processo: o agregador recebe "conexão recusada".
-- **Bancos de tamanho realista.** Cada mercado guarda de 1.352 a 1.690 produtos e cerca de 240 a 300 mil preços históricos (14 a 18 MB). Uma busca pelo catálogo inteiro trafega cerca de 1,5 MB pelos cinco sockets, e o agregador junta perto de 7.700 ofertas antes de paginar.
+- **Bancos de tamanho realista.** Cada mercado guarda de 1.369 a 1.689 produtos. Uma busca pelo catálogo inteiro trafega cerca de 1,5 MB pelos cinco sockets, e o agregador junta perto de 7.700 ofertas antes de paginar.
 - **Medição de recursos.** Cada mercado devolve, junto com a resposta, a CPU gasta pela thread que a atendeu (`time.thread_time()`, que não conta o sleep da latência). O agregador mede a CPU do próprio processo durante a requisição (`psutil`), o pico de threads (`threading.active_count()` a cada evento) e a memória residente, e grava tudo no registro da requisição.
 - **Métricas em memória.** Suficiente para a demonstração; o CSV preserva os dados para o relatório.
 - **Sem ORM no front.** Quem acessa o SQLite é o Python de cada mercado; o navegador só conversa com o agregador por HTTP e WebSocket.

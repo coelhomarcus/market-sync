@@ -1,21 +1,21 @@
 import { useState } from 'react'
 import { brl } from '../lib/format'
-import { marketColor, MARKET_BY_ID, MARKETS } from '../lib/markets'
+import { useMarkets } from '../state/markets'
 import type { MarketTiming, Product } from '../lib/types'
 import { useApp } from '../state/app'
 import { Drawer } from './Drawer'
-import { PriceHistoryChart } from './PriceHistoryChart'
 import { PriceTag } from './PriceTag'
 import { ProductImage } from './ProductImage'
 
 export function ProductDrawer({ product, timings, onClose }: { product: Product | null; timings: MarketTiming[]; onClose: () => void }) {
   const { addToCart } = useApp()
+  const { markets } = useMarkets()
   const [qty, setQty] = useState(1)
   if (!product) return null
 
   const offered = new Set(product.offers.map((o) => o.market_id))
   const failed = timings.filter((t) => !t.ok)
-  const notSold = MARKETS.filter((m) => !offered.has(m.id) && !failed.some((f) => f.market_id === m.id))
+  const notSold = markets.filter((m) => !offered.has(m.id) && !failed.some((f) => f.market_id === m.id))
   const best = product.cheapest
 
   return (
@@ -47,9 +47,8 @@ export function ProductDrawer({ product, timings, onClose }: { product: Product 
               }`}
             >
               <span className="w-5 text-sm font-semibold text-cinza tabular-nums">{i + 1}º</span>
-              <span className="size-3 shrink-0 rounded-full" style={{ background: marketColor(o.market_id) }} aria-hidden />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">{MARKET_BY_ID[o.market_id]?.name ?? o.market_name}</p>
+                <p className="font-semibold">{o.market_name}</p>
                 <p className="text-xs text-cinza">
                   {!o.in_stock
                     ? 'Sem estoque'
@@ -76,13 +75,12 @@ export function ProductDrawer({ product, timings, onClose }: { product: Product 
           {notSold.length > 0 && <p>Não vendem este produto: {notSold.map((m) => m.name).join(', ')}.</p>}
           {failed.length > 0 && (
             <p className="text-tomate">
-              Não responderam a esta consulta: {failed.map((f) => MARKET_BY_ID[f.market_id]?.name ?? f.market_name).join(', ')}.
+              Não responderam a esta consulta: {failed.map((f) => f.market_name).join(', ')}.
             </p>
           )}
         </div>
       )}
 
-      <PriceHistoryChart slug={product.slug} />
 
       <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-linha bg-white px-5 py-4">
         <div className="flex items-center rounded-full border border-linha">

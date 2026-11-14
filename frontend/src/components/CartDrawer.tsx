@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { brl, duration } from '../lib/format'
-import { marketColor, MARKET_BY_ID, MODE_LABEL } from '../lib/markets'
+import { MODE_LABEL } from '../lib/modes'
 import type { BasketResponse } from '../lib/types'
 import { useApp } from '../state/app'
 import { useLiveQuery } from '../state/live'
+import { useMarkets } from '../state/markets'
 import { Drawer } from './Drawer'
 import { PriceTag } from './PriceTag'
 import { ProductImage } from './ProductImage'
-import { Timeline } from './Timeline'
+import { Timeline, timelineScale } from './Timeline'
 
 export function CartDrawer() {
   const { cart, setQty, clearCart, cartOpen, setCartOpen, mode } = useApp()
@@ -17,7 +18,8 @@ export function CartDrawer() {
   const [error, setError] = useState<string | null>(null)
   const [startedAt, setStartedAt] = useState(0)
   const token = useRef(0)
-  const live = useLiveQuery('basket', loading, startedAt)
+  const live = useLiveQuery(loading, startedAt, { kind: 'basket' })
+  const { name } = useMarkets()
 
   const compare = async () => {
     const my = ++token.current
@@ -43,8 +45,6 @@ export function CartDrawer() {
     if (result || loading) void compare()
   }, [mode])
 
-  const names = Object.fromEntries(cart.map((i) => [i.slug, `${i.name}${i.brand ? ` ${i.brand}` : ''}`]))
-  const best = result?.cheapest
 
   return (
     <Drawer open={cartOpen} onClose={() => setCartOpen(false)} title="Sua cesta" wide>
@@ -102,7 +102,7 @@ export function CartDrawer() {
                 </span>
               </div>
               <div className="rounded-xl border border-linha bg-white p-4">
-                <Timeline entries={live.entries} scaleMs={Math.max(live.elapsed * 1.15, 1500)} nowMs={live.elapsed} />
+                <Timeline mode={mode} entries={live.entries} scaleMs={timelineScale(live.elapsed)} nowMs={live.elapsed} />
               </div>
             </section>
           )}
@@ -117,59 +117,38 @@ export function CartDrawer() {
               </div>
               <ol className="space-y-2">
                 {result.markets.map((m) => {
-                  const isBest = best?.market_id === m.market_id
+                  const isBest = result.cheapest?.market_id === m.market_id
+                  const missing = m.missing?.length ?? 0
                   return (
                     <li
                       key={m.market_id}
-                      className={`rounded-xl border bg-white px-4 py-3 ${isBest ? 'border-tomate ring-2 ring-tomate/20' : 'border-linha'}`}
+                      className={`flex items-center gap-3 rounded-xl border bg-white px-4 py-3 ${isBest ? 'border-tomate ring-2 ring-tomate/20' : 'border-linha'}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="size-3 shrink-0 rounded-full" style={{ background: marketColor(m.market_id) }} aria-hidden />
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold">{MARKET_BY_ID[m.market_id]?.name ?? m.market_name}</p>
-                          <p className="text-xs text-cinza">
-                            {!m.ok
-                              ? `Não respondeu: ${m.error}`
-                              : m.complete
-                                ? 'Tem tudo'
-                                : `Falta: ${m.missing!.map((s) => names[s] ?? s).join(', ')}`}
-                          </p>
+                      <p className="flex-1 font-semibold">{name(m.market_id)}</p>
+                      {!m.ok ? (
+                        <span className="text-sm text-tomate">não respondeu</span>
+                      ) : isBest ? (
+                        <div className="text-right">
+                          <span className="mb-1 block text-xs font-bold text-tomate">Mais barata</span>
+                          <PriceTag price={m.total!} size="sm" tone="tomate" />
                         </div>
-                        {m.ok &&
-                          (isBest ? (
-                            <div className="text-right">
-                              <span className="mb-1 block text-xs font-bold text-tomate">Mais barata</span>
-                              <PriceTag price={m.total!} size="sm" tone="tomate" />
-                            </div>
-                          ) : (
-                            <span className={`font-display text-lg font-bold tabular-nums ${m.complete ? '' : 'text-cinza'}`}>{brl(m.total!)}</span>
-                          ))}
-                      </div>
+                      ) : (
+                        <span className="text-right">
+                          <span className={`font-display text-lg font-bold tabular-nums ${missing ? 'text-cinza' : ''}`}>{brl(m.total!)}</span>
+                          {missing > 0 && (
+                            <span className="block text-xs text-cinza">
+                              falta {missing} {missing === 1 ? 'item' : 'itens'}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </li>
                   )
                 })}
               </ol>
-              {result.best_mix.lines.length > 0 && (
-                <div className="rounded-xl bg-gema-clara p-4 text-sm">
-                  <p>
-                    Cada item no mercado mais barato: <strong>{brl(result.best_mix.total)}</strong>
-                    {result.best_mix.savings_vs_cheapest != null && result.best_mix.savings_vs_cheapest > 0 && (
-                      <> ({brl(result.best_mix.savings_vs_cheapest)} a menos)</>
-                    )}
-                  </p>
-                  <ul className="mt-2 space-y-0.5 text-cinza">
-                    {result.best_mix.lines.map((l) => (
-                      <li key={l.slug}>
-                        {l.qty}× {l.name}
-                        {l.brand ? ` ${l.brand}` : ''}: {brl(l.subtotal)} no {MARKET_BY_ID[l.market_id!]?.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               <div className="rounded-xl border border-linha bg-white p-4">
                 <p className="mb-3 text-sm font-semibold">Tempo de cada mercado</p>
-                <Timeline entries={result.timings} scaleMs={result.total_ms} />
+                <Timeline mode={result.mode} entries={result.timings} scaleMs={timelineScale(result.total_ms)} />
               </div>
             </section>
           )}

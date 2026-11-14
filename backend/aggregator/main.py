@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import BACKEND_DIR, MARKETS, MarketInfo
-from markets.catalog import CATALOG
 
 from . import compare, strategies
 from .client import query_market
@@ -60,9 +59,10 @@ def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
 
     @app.get("/api/search/{mode}")
     def search(mode: Mode, q: str = "", category: str = "", sort: Sort = "preco",
-               page: int = Query(1, ge=1), page_size: int = Query(compare.PAGE_SIZE, ge=1, le=200)) -> dict:
+               page: int = Query(1, ge=1), page_size: int = Query(compare.PAGE_SIZE, ge=1, le=200),
+               source: Literal["loja", "comparacao"] = "loja") -> dict:
         query = q.strip()[:80]
-        results, record = agg.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query)
+        results, record = agg.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source)
         return compare.search_response(results, record, category, sort, page, page_size)
 
     @app.post("/api/basket/{mode}")
@@ -72,25 +72,12 @@ def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
         results, record = agg.execute(mode, "basket", payload, f"cesta ({len(wanted)} itens)")
         return compare.basket_response(wanted, results, record)
 
-    @app.get("/api/history/{slug}")
-    def price_history(slug: str, days: int = Query(90, ge=7, le=180)) -> dict:
-        results = strategies.concurrent(agg.markets, {"cmd": "HISTORY", "slug": slug, "days": days})
-        return {"slug": slug, "days": days, "markets": [
-            {"market_id": r.market_id, "market_name": r.market_name, "ok": r.ok, "error": r.error,
-             "points": (r.data or {}).get("points", [])}
-            for r in results
-        ]}
-
-    @app.get("/api/products")
-    def catalog() -> list[dict]:
-        return [{"slug": p.slug, "name": p.name, "brand": p.brand, "category": p.category, "unit": p.unit,
-                 "image": f"/products/{p.image}.jpg"} for p in CATALOG]
-
     # ------------------------------------------------------------ painel
 
     def market_status(market: MarketInfo, payload: dict) -> dict:
         r = query_market(market, payload, timeout=1.5, retries=0)  # o painel não espera retry
-        info = {"id": market.id, "name": market.name, "port": market.port, "color": market.color}
+        info = {"id": market.id, "name": market.name, "short": market.short, "port": market.port,
+                "color": market.color, "default_latency_ms": market.latency_ms}
         if not r.ok:
             return {**info, "reachable": False, "online": False, "error": r.error}
         return {**info, "reachable": True, **r.data}

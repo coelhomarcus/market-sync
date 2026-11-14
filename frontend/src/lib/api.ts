@@ -1,4 +1,4 @@
-import type { BasketResponse, BenchmarkResult, MarketStatus, MetricRecord, Mode, PriceHistory, SearchResponse, Sort } from './types'
+import type { BasketResponse, BenchmarkResult, MarketStatus, MetricRecord, Mode, SearchResponse, Sort } from './types'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response
@@ -27,11 +27,16 @@ const json = (body: unknown): RequestInit => ({
 })
 
 export const api = {
-  search: (mode: Mode, params: { q: string; category: string; sort: Sort; page: number }) =>
+  search: (mode: Mode, params: { q: string; category?: string; sort?: Sort; page?: number; source?: 'loja' | 'comparacao' }) =>
     request<SearchResponse>(
-      `/api/search/${mode}?${new URLSearchParams({ q: params.q, category: params.category, sort: params.sort, page: String(params.page) })}`,
+      `/api/search/${mode}?${new URLSearchParams({
+        q: params.q,
+        category: params.category ?? '',
+        sort: params.sort ?? 'preco',
+        page: String(params.page ?? 1),
+        source: params.source ?? 'loja',
+      })}`,
     ),
-  history: (slug: string, days = 90) => request<PriceHistory>(`/api/history/${encodeURIComponent(slug)}?days=${days}`),
   basket: (mode: Mode, items: { slug: string; qty: number }[]) => request<BasketResponse>(`/api/basket/${mode}`, json({ items })),
   benchmark: (runs: number, q: string) => request<BenchmarkResult>('/api/benchmark', json({ runs, q })),
   markets: () => request<MarketStatus[]>('/api/markets'),

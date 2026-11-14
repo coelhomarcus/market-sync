@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { ProductCard } from '../components/ProductCard'
 import { ProductDrawer } from '../components/ProductDrawer'
-import { Timeline } from '../components/Timeline'
+import { Timeline, timelineScale } from '../components/Timeline'
 import { api } from '../lib/api'
 import { duration, int } from '../lib/format'
-import { MARKET_BY_ID, MARKETS, MODE_LABEL } from '../lib/markets'
+import { MODE_LABEL } from '../lib/modes'
 import type { Product, SearchResponse, Sort } from '../lib/types'
 import { useApp } from '../state/app'
 import { useLiveQuery } from '../state/live'
+import { useMarkets } from '../state/markets'
 
 interface Params {
   q: string
@@ -56,7 +57,7 @@ export function Store() {
   const token = useRef(0)
   const gridTop = useRef<HTMLDivElement>(null)
 
-  // cada mudança de modo, busca, categoria, ordem ou página consulta os 5 mercados de novo
+  // cada mudança de modo, texto, categoria, ordem ou página consulta os 5 mercados de novo
   useEffect(() => {
     const my = ++token.current
     setLoading(true)
@@ -69,7 +70,8 @@ export function Store() {
       .finally(() => my === token.current && setLoading(false))
   }, [mode, params])
 
-  const live = useLiveQuery('search', loading, startedAt)
+  const live = useLiveQuery(loading, startedAt, { kind: 'search' })
+  const { short } = useMarkets()
 
   const submit = (value: string) => {
     setInput(value)
@@ -83,7 +85,7 @@ export function Store() {
   }
 
   const failed = data?.markets.filter((m) => !m.ok) ?? []
-  // as categorias só mudam com a busca: ao trocar modo, ordem ou página elas continuam valendo
+  // as categorias só mudam com o texto consultado: ao trocar modo, ordem ou página elas continuam valendo
   const categories = data && data.query === params.q ? data.categories : null
   const allCount = categories?.reduce((n, c) => n + c.count, 0) ?? 0
   const modeColor = mode === 'sequential' ? 'var(--color-seq)' : 'var(--color-conc)'
@@ -115,7 +117,7 @@ export function Store() {
                 <button
                   type="button"
                   onClick={() => submit('')}
-                  aria-label="Limpar busca"
+                  aria-label="Limpar"
                   className="absolute top-1/2 right-3 grid size-7 -translate-y-1/2 place-items-center rounded-full text-cinza hover:bg-papel"
                 >
                   ✕
@@ -150,13 +152,13 @@ export function Store() {
               ) : (
                 data && (
                   <>
-                    {data.ok_count} de {MARKETS.length} mercados responderam
+                    {data.ok_count} de {data.markets.length} mercados responderam
                     {failed.length > 0 && (
-                      <span className="text-tomate"> ({failed.map((f) => MARKET_BY_ID[f.market_id]?.short).join(', ')} fora do ar)</span>
+                      <span className="text-tomate"> ({failed.map((f) => short(f.market_id)).join(', ')} fora do ar)</span>
                     )}
                     .{' '}
                     <Link to="/painel" className="font-semibold text-folha underline-offset-2 hover:underline">
-                      Ver no painel
+                      Comparar os dois modos →
                     </Link>
                   </>
                 )
@@ -165,9 +167,9 @@ export function Store() {
           </div>
           <div aria-label="Tempo de resposta de cada mercado">
             {loading ? (
-              <Timeline entries={live.entries} scaleMs={Math.max(live.elapsed * 1.15, 1500)} nowMs={live.elapsed} />
+              <Timeline mode={mode} entries={live.entries} scaleMs={timelineScale(live.elapsed)} nowMs={live.elapsed} />
             ) : (
-              <Timeline entries={data?.markets ?? []} scaleMs={data?.total_ms ?? 1} />
+              <Timeline mode={data?.mode ?? mode} entries={data?.markets ?? []} scaleMs={timelineScale(data?.total_ms ?? 0)} />
             )}
           </div>
         </section>

@@ -1,6 +1,6 @@
 # market-sync — Comparador de Preços de Supermercados
 
-Trabalho prático de Redes de Computadores e Sistemas Distribuídos: um agregador que consulta **5 supermercados independentes por sockets TCP** (cada um com seu banco SQLite de ~1.500 produtos e ~280 mil preços históricos), compara os preços e mostra, ao vivo, a diferença entre consultar os mercados **um por vez (sequencial)** e **todos ao mesmo tempo (concorrente, com threads)**.
+Trabalho prático de Redes de Computadores e Sistemas Distribuídos: um agregador que consulta **5 supermercados independentes por sockets TCP** (cada um com seu banco SQLite de ~1.500 produtos), compara os preços e mostra, ao vivo, a diferença entre consultar os mercados **um por vez (sequencial)** e **todos ao mesmo tempo (concorrente, com threads)**.
 
 ```
 React (loja + painel) ──HTTP──▶ FastAPI (agregador :8000) ──TCP──▶ 5 processos "mercado" (:5001–5005, SQLite próprio)
@@ -44,9 +44,9 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 1. **Loja:** busque "arroz" no modo Sequencial e depois no Concorrente (alternador no topo). A faixa abaixo da busca mostra o tempo e as barras de cada conexão TCP: escada no sequencial, barras paralelas no concorrente.
 2. **Produto:** clique num produto para ver os mercados ordenados por preço e o selo "Menor preço".
 3. **Cesta:** adicione itens e clique em "Comparar nos 5 mercados".
-4. **Painel ao vivo:** speedup médio, linha do tempo da última consulta de cada modo, recursos (CPU e threads) e as consultas chegando por WebSocket.
-5. **Falhas e retry:** na seção "Mercados" do painel, tire um mercado do ar. O agregador tenta de novo 3 vezes (esperando 0,5 s, 1 s e 2 s) antes de desistir: no sequencial essa espera trava a fila inteira (~3,5 s a mais); no concorrente ela acontece enquanto os outros mercados respondem. Latência acima de 3 s vira timeout (sem retry).
-6. **Benchmark:** rode 5 ou 10 rodadas e exporte o CSV.
+4. **Comparar modos** (`/painel`): clique em "Comparar os dois modos". A mesma busca roda nos dois modos ao mesmo tempo, com as linhas do tempo na mesma escala: escada laranja (sequencial) × bloco azul (concorrente). "Repetir 5×" faz a média; abaixo ficam speedup, CPU e threads.
+5. **Falhas e retry:** na seção "Mercados", cada mercado tem os cenários Normal · Lento (2 s) · Timeout (5 s) · Fora do ar. Tire um do ar e compare de novo. O agregador tenta de novo 3 vezes (esperando 0,5 s, 1 s e 2 s) antes de desistir: no sequencial essa espera trava a fila inteira (~3,5 s a mais); no concorrente ela acontece enquanto os outros mercados respondem. Latência acima de 3 s vira timeout (sem retry).
+6. **Eventos:** cada consulta chega ao vivo pelo WebSocket; abra um cartão para ver os eventos TCP. "Exportar CSV" baixa as métricas.
 7. **Prova de que é TCP de verdade:** `lsof -nP -iTCP:5001-5005 -sTCP:LISTEN` lista os 5 processos Python escutando.
 
 ## Testes
@@ -55,7 +55,7 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 cd backend && .venv/bin/python -m pytest
 ```
 
-36 testes: protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta, histórico), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, retry de mercado fora do ar (espera crescente, volta no meio, custo no sequencial), conexão recusada, timeout, rotas da API, WebSocket e medição de recursos.
+35 testes: protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, retry de mercado fora do ar (espera crescente, volta no meio, custo no sequencial), conexão recusada, timeout, rotas da API, WebSocket e medição de recursos.
 
 ## Estrutura
 
@@ -67,7 +67,7 @@ backend/
     server.py               servidor TCP: ThreadingTCPServer = uma thread por conexão
     database.py             consultas ao SQLite do mercado
     catalog.py              95 tipos × marcas × tamanhos = 1.740 SKUs
-    seed.py                 gera data/<mercado>.db (produtos + 180 dias de histórico)
+    seed.py                 gera data/<mercado>.db
   aggregator/               ── o agregador (FastAPI, porta 8000)
     main.py                 rotas HTTP e WebSocket
     core.py                 executa a consulta no modo escolhido e mede
@@ -77,7 +77,7 @@ backend/
     events.py, metrics.py   eventos ao vivo e histórico/CSV
   run_all.py                sobe tudo
   tests/
-frontend/                   Vite + React + TypeScript + Tailwind + Recharts
+frontend/                   Vite + React + TypeScript + Tailwind
 scripts/fetch_images.py     baixa as fotos reais (Open Food Facts) para frontend/public/products
 docs/                       requisitos, casos de uso, arquitetura, protocolo, experimentos
 ```
@@ -97,10 +97,9 @@ docs/                       requisitos, casos de uso, arquitetura, protocolo, ex
 | `GET /api/search/sequential?q=` | Consulta os mercados um de cada vez |
 | `GET /api/search/concurrent?q=` | Consulta todos ao mesmo tempo |
 | `GET /api/search/{mode}?q=&category=&sort=&page=` | Busca com filtro, ordenação e paginação |
-| `GET /api/history/{slug}` | Histórico de preço do produto nos 5 mercados |
 | `POST /api/basket/{mode}` | Total de uma cesta em cada mercado |
 | `POST /api/benchmark` | Roda N vezes cada modo e devolve estatísticas |
-| `GET /api/markets` | Estado de cada mercado (via comando STATUS por TCP) |
+| `GET /api/markets` | Nome, cor e estado de cada mercado (via comando STATUS por TCP) |
 | `POST /api/markets/{id}/config` | Altera latência / online (comando CONFIG por TCP) |
 | `GET /api/metrics/history` | Histórico de requisições |
 | `GET /api/metrics/export.csv` | Histórico em CSV |

@@ -8,15 +8,15 @@ Medir o impacto da concorrência no tempo de resposta do agregador, verificar o 
 
 - macOS (Apple Silicon), Python 3.12, todos os processos em `127.0.0.1`.
 - 5 mercados, cada um em seu processo, com latência simulada de ±15% em torno do valor configurado.
-- Bancos gerados por `markets/seed.py`: 1.352 a 1.690 produtos por mercado, 7.692 no total, 1,38 milhão de preços históricos, 82 MB.
+- Bancos gerados por `markets/seed.py`: 1.369 a 1.689 produtos por mercado, 7.730 no total.
 - Timeout do cliente TCP: 3 s.
 - Medições feitas pelo agregador com `time.perf_counter()`; cada requisição gera um registro exportável em CSV (inclui bytes recebidos por mercado).
 
 ## Como reproduzir
 
 1. `cd backend && .venv/bin/python run_all.py`
-2. No painel (`/painel`), clique em "Zerar métricas".
-3. Ajuste as latências na seção "Mercados" conforme o experimento.
+2. Em `/painel`, clique em "Zerar".
+3. Escolha o cenário de cada mercado na seção "Mercados" (ou mude a latência com `curl -X POST localhost:8000/api/markets/aurora/config -H 'content-type: application/json' -d '{"latency_ms":800}'`).
 4. Rode o benchmark com o número de rodadas indicado (ou `curl -X POST localhost:8000/api/benchmark -H 'content-type: application/json' -d '{"runs":10,"q":"arroz"}'`).
 5. Exporte o CSV para gráficos e tabelas do relatório.
 

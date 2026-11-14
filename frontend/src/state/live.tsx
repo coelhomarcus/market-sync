@@ -3,7 +3,7 @@ import type { TimelineEntry } from '../components/Timeline'
 import { api } from '../lib/api'
 import type { BusEvent, MetricRecord, Mode } from '../lib/types'
 
-/** Estado de uma requisição em andamento, montado a partir dos eventos do WebSocket. */
+/** Estado de uma consulta em andamento, montado a partir dos eventos do WebSocket. */
 export interface LiveRequest {
   request_id: string
   mode: Mode
@@ -162,23 +162,29 @@ export function useLive() {
 
 /** Relógio que anda enquanto `active` é verdadeiro, contando a partir de `since` (performance.now). */
 function useElapsed(active: boolean, since: number) {
-  const [now, setNow] = useState(0)
+  // guarda junto o `since` da medição: um valor de uma consulta anterior nunca aparece na nova
+  const [tick, setTick] = useState({ since: 0, ms: 0 })
   useEffect(() => {
     if (!active) return
-    const id = setInterval(() => setNow(performance.now() - since), 50)
+    const id = setInterval(() => setTick({ since, ms: performance.now() - since }), 50)
     return () => clearInterval(id)
   }, [active, since])
-  return active ? now : 0
+  return active && tick.since === since ? tick.ms : 0
 }
 
 /**
  * Acompanha, pelos eventos do WebSocket, uma consulta da loja que ainda está carregando:
  * quanto tempo já passou e como está cada mercado (para desenhar a linha do tempo ao vivo).
  */
-export function useLiveQuery(kind: 'search' | 'basket', loading: boolean, startedAt: number) {
+export function useLiveQuery(loading: boolean, startedAt: number, match: { kind: 'search' | 'basket'; mode?: Mode; source?: string }) {
   const { live } = useLive()
-  const clock = useElapsed(loading, startedAt)
-  const req = loading ? live.find((r) => r.source === 'loja' && r.kind === kind && r.startedAt >= startedAt - 150) : undefined
+  const { kind, mode, source = 'loja' } = match
+  const req = loading
+    ? live.find((r) => r.source === source && r.kind === kind && (!mode || r.mode === mode) && r.startedAt >= startedAt - 150)
+    : undefined
+  // o relógio conta a partir do request_start do servidor, não do clique: assim ele não fica
+  // adiantado em relação aos tempos medidos pelo agregador, e as barras não voltam ao terminar
+  const clock = useElapsed(!!req, req?.startedAt ?? 0)
   const markets = Object.entries(req?.markets ?? {})
   const entries: TimelineEntry[] = markets.map(([market_id, m]) => ({ market_id, ...m }))
   // o relógio local pode atrasar com a aba em segundo plano; os eventos do servidor não

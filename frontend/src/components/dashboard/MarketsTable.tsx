@@ -1,122 +1,87 @@
 import { useState } from 'react'
-import { bytes, int } from '../../lib/format'
+import { int } from '../../lib/format'
 import type { MarketStatus } from '../../lib/types'
-import { LatencySlider } from './LatencySlider'
+import { useMarkets } from '../../state/markets'
 
-function StatusBadge({ m }: { m: MarketStatus }) {
-  const [tone, text, icon] = !m.reachable
-    ? ['bg-tomate/10 text-tomate', 'Processo parado', 'M3 3l6 6M9 3 3 9']
-    : !m.online
-      ? ['bg-[#fff1d6] text-[#9a5b00]', 'Fora do ar', 'M3 3h6v6H3z']
-      : ['bg-folha-clara text-folha', 'No ar', 'M2.5 6.5 5 9l4.5-5.5']
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>
-      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-        <path d={icon} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      {text}
-    </span>
-  )
+type Scenario = 'normal' | 'lento' | 'timeout' | 'fora'
+
+const SCENARIOS: { id: Scenario; label: string }[] = [
+  { id: 'normal', label: 'Normal' },
+  { id: 'lento', label: 'Lento (2 s)' },
+  { id: 'timeout', label: 'Timeout (5 s)' },
+  { id: 'fora', label: 'Fora do ar' },
+]
+
+function current(m: MarketStatus): Scenario | null {
+  if (!m.online) return 'fora'
+  if (m.latency_ms === m.default_latency_ms) return 'normal'
+  if (m.latency_ms === 2000) return 'lento'
+  if (m.latency_ms === 5000) return 'timeout'
+  return null
 }
 
-const COLS = 'lg:grid-cols-[minmax(0,1.3fr)_7.5rem_minmax(15rem,2fr)_minmax(0,1.1fr)_6rem_8.5rem]'
+function config(m: MarketStatus, s: Scenario) {
+  if (s === 'fora') return { online: false }
+  const latency_ms = s === 'normal' ? m.default_latency_ms : s === 'lento' ? 2000 : 5000
+  return { online: true, latency_ms }
+}
 
-function Row({ m, configure }: { m: MarketStatus; configure: (id: string, cfg: { latency_ms?: number; online?: boolean }) => Promise<unknown> }) {
-  const [busy, setBusy] = useState(false)
+function Row({ m }: { m: MarketStatus }) {
+  const { configure } = useMarkets()
+  const [busy, setBusy] = useState<Scenario | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const active = m.reachable ? current(m) : null
 
-  const run = async (cfg: { latency_ms?: number; online?: boolean }) => {
+  const choose = (s: Scenario) => {
+    setBusy(s)
     setErr(null)
-    try {
-      await configure(m.id, cfg)
-    } catch (e) {
-      setErr((e as Error).message)
-      throw e
-    }
+    configure(m.id, config(m, s))
+      .catch((e: Error) => setErr(e.message))
+      .finally(() => setBusy(null))
   }
 
   return (
-    <li className={`grid grid-cols-2 items-center gap-x-4 gap-y-3 px-5 py-4 ${COLS}`}>
-      <div className="col-span-2 flex items-center gap-3 lg:col-span-1">
-        <span className="size-3 shrink-0 rounded-full" style={{ background: m.color }} aria-hidden />
-        <div className="min-w-0">
-          <p className="truncate font-semibold">{m.name}</p>
-          <p className="text-xs text-cinza tabular-nums">porta TCP {m.port}</p>
-        </div>
+    <li className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5">
+      <div className="w-44">
+        <p className="font-semibold">{m.name}</p>
+        <p className="text-xs text-cinza tabular-nums">
+          {m.reachable ? `porta ${m.port} · ${int(m.latency_ms ?? 0)} ms` : `porta ${m.port} · processo parado`}
+        </p>
       </div>
-      <div>
-        <StatusBadge m={m} />
+      <div role="radiogroup" aria-label={`Cenário de ${m.name}`} className="flex flex-wrap gap-1 rounded-full bg-papel p-1">
+        {SCENARIOS.map((s) => {
+          const on = active === s.id
+          return (
+            <button
+              key={s.id}
+              role="radio"
+              aria-checked={on}
+              disabled={!m.reachable || busy !== null}
+              onClick={() => choose(s.id)}
+              className={`rounded-full px-3 py-1 text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
+                on ? (s.id === 'normal' ? 'bg-folha text-white' : 'bg-tomate text-white') : 'text-cinza hover:bg-white hover:text-tinta'
+              } ${busy === s.id ? 'animate-pulse' : ''}`}
+            >
+              {s.label}
+            </button>
+          )
+        })}
       </div>
-      <div className="col-span-2 lg:col-span-1">
-        <LatencySlider
-          value={m.latency_ms ?? 0}
-          color={m.color}
-          disabled={!m.reachable}
-          label={`Latência simulada de ${m.name}`}
-          onCommit={(v) => run({ latency_ms: v })}
-        />
-      </div>
-      <div className="text-sm">
-        {m.reachable ? (
-          <>
-            <p className="tabular-nums">{int(m.products ?? 0)} produtos</p>
-            <p className="text-xs text-cinza tabular-nums">{bytes(m.db_bytes)}</p>
-          </>
-        ) : (
-          <p className="text-xs text-cinza">—</p>
-        )}
-      </div>
-      <p className="text-sm tabular-nums lg:text-right">
-        {m.reachable ? int(m.requests_served ?? 0) : '—'}
-        <span className="text-cinza lg:hidden"> consultas</span>
-      </p>
-      <div className="text-right">
-        <button
-          disabled={!m.reachable || busy}
-          onClick={() => {
-            setBusy(true)
-            run({ online: !m.online })
-              .catch(() => {})
-              .finally(() => setBusy(false))
-          }}
-          className={`w-full rounded-full px-3 py-1.5 text-sm font-semibold lg:w-auto ${
-            m.online ? 'border border-tomate/40 text-tomate hover:bg-tomate/5' : 'bg-folha text-white hover:bg-folha-escura'
-          } disabled:opacity-40`}
-        >
-          {m.online ? 'Tirar do ar' : 'Colocar no ar'}
-        </button>
-      </div>
-      {err && <p className="col-span-full text-sm text-tomate">{err}</p>}
+      <p className="ml-auto text-sm text-cinza tabular-nums">{m.reachable ? `${int(m.requests_served ?? 0)} consultas` : ''}</p>
+      {err && <p className="w-full text-sm text-tomate">{err}</p>}
     </li>
   )
 }
 
-export function MarketsTable({
-  markets,
-  error,
-  configure,
-}: {
-  markets: MarketStatus[]
-  error: string | null
-  configure: (id: string, cfg: { latency_ms?: number; online?: boolean }) => Promise<unknown>
-}) {
+export function MarketsTable() {
+  const { markets, error } = useMarkets()
   return (
     <div className="overflow-hidden rounded-2xl border border-linha bg-white">
-      <div className={`hidden gap-x-4 border-b border-linha bg-papel/60 px-5 py-2.5 text-xs font-semibold text-cinza lg:grid ${COLS}`}>
-        <span>Mercado</span>
-        <span>Situação</span>
-        <span>
-          Latência <span className="font-normal">(traço = timeout de 3 s)</span>
-        </span>
-        <span>Banco</span>
-        <span className="text-right">Consultas</span>
-        <span />
-      </div>
       {error && <p className="px-5 py-3 text-sm text-tomate">{error}</p>}
       {markets.length === 0 && !error && <p className="px-5 py-6 text-sm text-cinza">Carregando…</p>}
       <ul className="divide-y divide-linha">
         {markets.map((m) => (
-          <Row key={m.id} m={m} configure={configure} />
+          <Row key={m.id} m={m} />
         ))}
       </ul>
     </div>

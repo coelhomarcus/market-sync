@@ -83,21 +83,18 @@ def search_response(results: list[MarketResult], record: dict, category: str, so
 
 
 def basket_response(wanted: dict[str, int], results: list[MarketResult], record: dict) -> dict:
-    per_market, best_line = [], {}
+    """Total da cesta em cada mercado; o mais barato é o de menor total entre os que têm tudo."""
+    per_market = []
     for r in results:
-        if not r.ok:
+        if r.ok:
+            per_market.append({"market_id": r.market_id, "market_name": r.market_name, "ok": True,
+                               "total": r.data["total"], "missing": r.data["missing"], "complete": not r.data["missing"]})
+        else:
             per_market.append({"market_id": r.market_id, "market_name": r.market_name, "ok": False, "error": r.error})
-            continue
-        per_market.append({"market_id": r.market_id, "market_name": r.market_name, "ok": True, "total": r.data["total"],
-                           "lines": r.data["lines"], "missing": r.data["missing"], "complete": not r.data["missing"]})
-        for line in r.data["lines"]:  # guarda, item a item, o mercado mais barato
-            if line["slug"] not in best_line or line["price"] < best_line[line["slug"]]["price"]:
-                best_line[line["slug"]] = {**line, "market_id": r.market_id, "market_name": r.market_name}
 
     # primeiro quem respondeu e tem tudo, do menor total ao maior
     per_market.sort(key=lambda m: (not m["ok"], not m.get("complete"), m.get("total", 0)))
     cheapest = per_market[0] if per_market and per_market[0].get("complete") else None
-    mix_total = round(sum(line["subtotal"] for line in best_line.values()), 2)
     return {
         "request_id": record["request_id"],
         "mode": record["mode"],
@@ -105,11 +102,5 @@ def basket_response(wanted: dict[str, int], results: list[MarketResult], record:
         "items": wanted,
         "markets": per_market,
         "cheapest": cheapest,
-        "best_mix": {
-            "total": mix_total,
-            "lines": list(best_line.values()),
-            "missing": [slug for slug in wanted if slug not in best_line],
-            "savings_vs_cheapest": round(cheapest["total"] - mix_total, 2) if cheapest else None,
-        },
         "timings": record["markets"],
     }

@@ -40,7 +40,7 @@ export function Layout() {
                   className={`size-2 rounded-full ${connected ? 'bg-gema' : 'bg-white/30'}`}
                   title={connected ? 'Recebendo eventos ao vivo' : 'Sem conexão com o agregador'}
                 />
-                Painel ao vivo
+                Comparar modos
               </span>
             </NavLink>
           </nav>

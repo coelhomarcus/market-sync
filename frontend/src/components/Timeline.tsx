@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { duration } from '../lib/format'
-import { MARKETS, marketColor, MARKET_BY_ID } from '../lib/markets'
+import { MODE_COLOR } from '../lib/modes'
+import type { Mode } from '../lib/types'
+import { useMarkets } from '../state/markets'
 
 export interface TimelineEntry {
   market_id: string
@@ -13,12 +15,18 @@ export interface TimelineEntry {
 }
 
 interface Props {
+  mode: Mode // a cor das barras é a do modo: laranja = sequencial, azul = concorrente
   entries: TimelineEntry[]
   scaleMs: number
   nowMs?: number // para barras ainda em andamento
   compact?: boolean
   axis?: boolean
 }
+
+const FAIL = '#d63a22'
+
+/** Escala do eixo: a mesma conta durante a consulta (tempo corrente) e no fim (tempo total), sem salto. */
+export const timelineScale = (ms: number) => Math.max(ms * 1.1, 1000)
 
 function niceStep(max: number) {
   for (const step of [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000]) if (max / step <= 6) return step
@@ -34,26 +42,30 @@ function label(e: TimelineEntry, pending: boolean) {
 }
 
 /** Uma linha por mercado; a barra vai do início ao fim da conversa TCP com ele. */
-export function Timeline({ entries, scaleMs, nowMs, compact, axis = !compact }: Props) {
+export function Timeline({ mode, entries, scaleMs, nowMs, compact, axis = !compact }: Props) {
+  const { markets, name } = useMarkets()
   const [hover, setHover] = useState<string | null>(null)
   const scale = Math.max(scaleMs, 1)
   const byId = Object.fromEntries(entries.map((e) => [e.market_id, e]))
+  const rows = markets.length ? markets.map((m) => ({ id: m.id, short: m.short })) : entries.map((e) => ({ id: e.market_id, short: e.market_id }))
   const step = niceStep(scale)
   const ticks = Array.from({ length: Math.floor(scale / step) + 1 }, (_, i) => i * step)
+  const color = MODE_COLOR[mode]
 
   return (
     <div className={compact ? 'space-y-1' : 'space-y-2'}>
-      {MARKETS.map((m) => {
+      {rows.map((m) => {
         const e = byId[m.id]
         const end = e?.end_ms ?? nowMs
         const pending = !!e && e.end_ms == null
         const failed = e?.ok === false
+        const retrying = pending && (e.attempts ?? 1) > 1
         const left = e ? (e.start_ms / scale) * 100 : 0
         const width = e && end != null ? Math.min(Math.max(((end - e.start_ms) / scale) * 100, 0.6), 100 - left) : 0
         const text = e ? label(e, pending) : ''
+        const alert = failed || retrying
         // onde vai o texto: depois da barra; dentro dela se for larga e chegar perto do fim; antes se for estreita
-        const place = left + width < 65 && !((failed || pending) && width > 30) ? 'after' : width > 22 ? 'inside' : 'before'
-        const alert = failed || pending
+        const place = left + width < 65 && !(alert && width > 30) ? 'after' : width > 22 ? 'inside' : 'before'
         return (
           <div key={m.id} className="flex items-center gap-2">
             <span className={`shrink-0 truncate text-cinza ${compact ? 'w-20 text-[11px]' : 'w-24 text-xs'}`}>{m.short}</span>
@@ -66,13 +78,11 @@ export function Timeline({ entries, scaleMs, nowMs, compact, axis = !compact }: 
                   style={{
                     left: `${left}%`,
                     width: `${width}%`,
-                    background: failed || (pending && (e.attempts ?? 1) > 1)
-                      ? `repeating-linear-gradient(135deg, ${marketColor(m.id)} 0 3px, transparent 3px 6px)`
-                      : marketColor(m.id),
-                    boxShadow: failed ? `inset 0 0 0 1.5px ${marketColor(m.id)}` : undefined,
+                    background: alert ? `repeating-linear-gradient(135deg, ${FAIL} 0 3px, transparent 3px 6px)` : color,
+                    boxShadow: alert ? `inset 0 0 0 1.5px ${FAIL}` : undefined,
                   }}
                   onMouseEnter={() => setHover(m.id)}
-                  aria-label={`${MARKET_BY_ID[m.id].name}: ${text || 'aguardando'}`}
+                  aria-label={`${name(m.id)}: ${text || 'aguardando'}`}
                 />
               )}
               {!compact && text && (
@@ -96,7 +106,7 @@ export function Timeline({ entries, scaleMs, nowMs, compact, axis = !compact }: 
                   className="absolute bottom-full z-10 mb-2 w-64 rounded-lg bg-tinta px-3 py-2 text-xs text-white shadow-lg"
                   style={{ left: `${Math.min(left, 55)}%` }}
                 >
-                  <p className="font-semibold">{MARKET_BY_ID[m.id].name}</p>
+                  <p className="font-semibold">{name(m.id)}</p>
                   <p className="tabular-nums">
                     {duration(e.start_ms)} → {e.end_ms != null ? duration(e.end_ms) : 'aguardando'}
                   </p>

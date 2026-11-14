@@ -67,25 +67,12 @@ export interface SearchResponse {
   error_count: number
 }
 
-export interface BasketLine {
-  slug: string
-  name: string
-  brand?: string
-  unit?: string
-  qty: number
-  price: number
-  subtotal: number
-  market_id?: string
-  market_name?: string
-}
-
 export interface BasketMarket {
   market_id: string
   market_name: string
   ok: boolean
   error?: string
   total?: number
-  lines?: BasketLine[]
   missing?: string[]
   complete?: boolean
 }
@@ -96,7 +83,6 @@ export interface BasketResponse {
   total_ms: number
   markets: BasketMarket[]
   cheapest: BasketMarket | null
-  best_mix: { total: number; lines: BasketLine[]; missing: string[]; savings_vs_cheapest: number | null }
   timings: MarketTiming[]
 }
 
@@ -105,7 +91,7 @@ export interface MetricRecord {
   ts: number
   mode: Mode
   kind: 'search' | 'basket'
-  source: 'loja' | 'benchmark'
+  source: 'loja' | 'benchmark' | 'comparacao'
   query: string
   total_ms: number
   ok_count: number
@@ -135,13 +121,14 @@ export interface BenchmarkResult {
 export interface MarketStatus {
   id: string
   name: string
+  short: string
   port: number
   color: string
+  default_latency_ms: number
   reachable: boolean
   online: boolean
   latency_ms?: number
   products?: number
-  history_rows?: number
   db_bytes?: number
   requests_served?: number
   thread_count?: number
@@ -175,10 +162,4 @@ export interface BusEvent {
   attempts?: number
   wait_ms?: number
   [key: string]: unknown
-}
-
-export interface PriceHistory {
-  slug: string
-  days: number
-  markets: { market_id: string; market_name: string; ok: boolean; error: string | null; points: { day: string; price: number }[] }[]
 }

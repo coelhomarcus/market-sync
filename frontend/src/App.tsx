@@ -4,20 +4,23 @@ import { Dashboard } from './pages/Dashboard'
 import { Store } from './pages/Store'
 import { AppProvider } from './state/app'
 import { LiveProvider } from './state/live'
+import { MarketsProvider } from './state/markets'
 
 export default function App() {
   return (
     <AppProvider>
       <LiveProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route index element={<Store />} />
-              <Route path="painel" element={<Dashboard />} />
-              <Route path="dashboard" element={<Navigate to="/painel" replace />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+        <MarketsProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route index element={<Store />} />
+                <Route path="painel" element={<Dashboard />} />
+                <Route path="dashboard" element={<Navigate to="/painel" replace />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </MarketsProvider>
       </LiveProvider>
     </AppProvider>
   )
