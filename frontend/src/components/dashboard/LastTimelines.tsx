@@ -14,7 +14,7 @@ export function LastTimelines({ records }: { records: MetricRecord[] }) {
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h3 className="font-semibold">
           <span className="mr-2 inline-block size-2.5 rounded-full" style={{ background: MODE_COLOR[mode] }} />
-          Última consulta {MODE_LABEL[mode].toLowerCase()}
+          {MODE_LABEL[mode]}
         </h3>
         {rec && <span className="font-display text-xl font-bold tabular-nums">{duration(rec.total_ms)}</span>}
       </div>
@@ -22,13 +22,13 @@ export function LastTimelines({ records }: { records: MetricRecord[] }) {
         <>
           <Timeline entries={rec.markets} scaleMs={scale} />
           <p className="mt-2 text-xs text-cinza">
-            {rec.kind === 'basket' ? `Comparação de ${rec.query}` : rec.query ? `Busca por “${rec.query}”` : 'Catálogo inteiro'}
-            {rec.source === 'benchmark' && ' (benchmark)'}. Threads usadas: {new Set(rec.markets.map((m) => m.thread)).size}.
+            {rec.kind === 'basket' ? rec.query : rec.query ? `“${rec.query}”` : 'catálogo inteiro'} · {new Set(rec.markets.map((m) => m.thread)).size}{' '}
+            {new Set(rec.markets.map((m) => m.thread)).size === 1 ? 'thread' : 'threads'}
           </p>
         </>
       ) : (
         <p className="rounded-lg border border-dashed border-linha p-6 text-center text-sm text-cinza">
-          Nenhuma consulta {MODE_LABEL[mode].toLowerCase()} ainda. Troque o modo no topo e faça uma busca na loja.
+          Nenhuma consulta ainda. Troque o modo no topo e busque na loja.
         </p>
       )}
     </div>

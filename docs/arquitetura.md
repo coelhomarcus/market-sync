@@ -11,7 +11,7 @@ flowchart LR
     subgraph Agregador["Agregador — FastAPI :8000 (1 processo)"]
         R[Rotas HTTP]
         S[strategies.py<br/>sequential / concurrent]
-        T[tcp_client.py]
+        T[client.py<br/>com retry]
         E[EventBus]
         MS[MetricsStore]
     end
@@ -38,23 +38,26 @@ Três protocolos aparecem no sistema:
 | Trecho | Protocolo | Por quê |
 |---|---|---|
 | Navegador → agregador | HTTP/1.1 + JSON | Rotas REST simples, fáceis de testar no navegador e no `/docs` do FastAPI. |
-| Agregador → mercados | **TCP puro** com framing próprio | Requisito do trabalho; mostra o que o HTTP esconde (fronteiras de mensagem, timeouts, conexão recusada). |
+| Agregador → mercados | **TCP puro**, uma mensagem JSON por linha | Requisito do trabalho; mostra o que o HTTP esconde (fronteiras de mensagem, timeouts, conexão recusada). |
 | Agregador → painel | WebSocket | Empurra eventos assim que acontecem, sem o navegador ficar perguntando. |
 
 ## Componentes
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `backend/common/protocol.py` | Framing: 4 bytes big-endian com o tamanho + JSON UTF-8. `send_msg` / `recv_msg`. |
-| `backend/common/config.py` | Lista dos mercados (id, nome, porta, latência inicial, perfil de preço). |
+| `backend/config.py` | Lista dos mercados (id, nome, porta, latência inicial, perfil de preço), timeout e retry. |
+| `backend/protocol.py` | Protocolo: cada mensagem é um JSON numa linha. `send` / `receive`. |
 | `backend/markets/catalog.py` | Catálogo gerado: 95 tipos × 10 marcas fictícias × sabores × tamanhos = 1.740 SKUs. |
 | `backend/markets/seed.py` | Gera um SQLite por mercado (sortimento próprio, preço, estoque, EAN e 180 dias de histórico de preço). |
-| `backend/markets/server.py` | Servidor TCP de um mercado. Um processo por mercado, uma thread por conexão. |
-| `backend/aggregator/tcp_client.py` | `query_market`: conecta, envia, espera a resposta e mede cada etapa. Nunca lança exceção. |
-| `backend/aggregator/strategies.py` | `sequential()` (laço `for`) e `concurrent()` (`ThreadPoolExecutor` + `as_completed`). |
-| `backend/aggregator/events.py` | Barramento thread-safe que entrega eventos às filas asyncio dos WebSockets. |
-| `backend/aggregator/metrics.py` | Histórico em memória, estatísticas e CSV. |
-| `backend/aggregator/main.py` | Rotas FastAPI, montagem das respostas (ordenação, menor preço, cesta). |
+| `backend/markets/database.py` | Consultas SQL de um mercado (busca, cesta, histórico). |
+| `backend/markets/server.py` | Servidor TCP de um mercado (`socketserver.ThreadingTCPServer`): uma thread por conexão. Simula latência e queda. |
+| `backend/aggregator/client.py` | `query_market`: conecta, envia, espera a resposta e mede. Se o mercado está fora do ar, tenta de novo (0,5 s → 1 s → 2 s). Nunca lança exceção. |
+| `backend/aggregator/strategies.py` | `sequential()` (um por vez) e `concurrent()` (`ThreadPoolExecutor`, uma thread por mercado). |
+| `backend/aggregator/core.py` | `Aggregator.execute`: roda a estratégia, mede tempo/CPU/threads e publica os eventos. |
+| `backend/aggregator/compare.py` | Junta as ofertas: menor preço, ordenação, paginação, cesta mais barata. |
+| `backend/aggregator/events.py` | Entrega os eventos das threads de consulta aos WebSockets (asyncio). |
+| `backend/aggregator/metrics.py` | Histórico em memória, médias e CSV. |
+| `backend/aggregator/main.py` | Rotas FastAPI. |
 | `backend/run_all.py` | Sobe os 5 mercados e o agregador como subprocessos e encerra tudo no Ctrl+C. |
 | `frontend/` | React + TypeScript + Tailwind + Recharts. Loja, cesta e painel. |
 

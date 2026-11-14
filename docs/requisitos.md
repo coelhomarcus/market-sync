@@ -13,7 +13,7 @@
 | ID | Requisito | Onde está |
 |---|---|---|
 | RF01 | Permitir pesquisar produtos por nome, categoria ou palavra-chave, sem diferenciar acentos e maiúsculas. | Loja, campo de busca; `SEARCH` no servidor |
-| RF02 | Consultar pelo menos quatro supermercados independentes (o sistema tem cinco processos). | `common/config.py`, `run_all.py` |
+| RF02 | Consultar pelo menos quatro supermercados independentes (o sistema tem cinco processos). | `config.py`, `run_all.py` |
 | RF03 | Exibir o preço de cada produto em cada supermercado. | Painel lateral do produto |
 | RF04 | Ordenar os resultados por preço (produtos pelo menor preço, ofertas de cada produto do menor para o maior). | `build_search_response`, `markets/server.py` |
 | RF05 | Destacar o supermercado com o menor preço. | Selo "Menor preço" e etiqueta vermelha |
@@ -39,7 +39,7 @@
 | RNF03 | Tolerância a falhas: um mercado lento ou fora do ar não pode derrubar a consulta. | Timeout de 3 s por conexão; erros viram resultado parcial (`ok=false`) em vez de exceção. |
 | RNF04 | Independência dos serviços: cada mercado tem processo, porta e banco próprios. | 5 processos, portas 5001–5005, `data/<mercado>.db`. |
 | RNF05 | Desempenho: com as latências padrão, a busca concorrente deve levar perto da maior latência (~1,2 s), e a sequencial perto da soma (~3,6 s). | Ver `experimentos.md`. |
-| RNF06 | Protocolo robusto a fragmentação do TCP. | Framing com prefixo de tamanho (`common/protocol.py`), testado com envio em pedaços de 7 bytes. |
+| RNF06 | Protocolo robusto a fragmentação do TCP. | Uma mensagem JSON por linha, lida com `readline()` (`protocol.py`), testado com envio em pedaços de 7 bytes. |
 | RNF07 | Interface em português, utilizável em celular e acessível por teclado. | Layout responsivo, foco visível, rótulos ARIA. |
 | RNF08 | Reprodutibilidade dos dados. | `seed.py` usa semente fixa por mercado e data de referência fixa. |
 | RNF09 | Testabilidade. | 34 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |

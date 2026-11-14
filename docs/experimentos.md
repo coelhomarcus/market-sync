@@ -72,7 +72,7 @@ Trazer 300 vezes mais dados custa poucos milissegundos em `localhost`; com as la
 
 ### E9 — Consumo de recursos (CPU, threads, memória)
 
-Cada mercado informa a CPU da thread que atendeu a consulta (`time.thread_time()`, sem contar o sleep da latência); o agregador mede a CPU do próprio processo com `psutil`, o pico de threads e a memória residente.
+Cada mercado informa a CPU da thread que atendeu a consulta (`time.thread_time()`, sem contar o sleep da latência); o agregador soma a CPU das próprias threads de consulta (também `time.thread_time()`) e conta quantas threads distintas conversaram com os mercados.
 
 | Cenário | Modo | Tempo | CPU agregador | CPU mercados | CPU total | Ocupação | Threads extras |
 |---|---|---|---|---|---|---|---|

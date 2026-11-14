@@ -1,52 +1,29 @@
-"""Histórico de métricas em memória + resumo estatístico + exportação CSV."""
+"""Guarda cada consulta feita (em memória), resume as médias e exporta CSV."""
 
 from __future__ import annotations
 
 import csv
 import io
-import itertools
 import statistics
 import threading
 import time
 from collections import deque
 
-from .tcp_client import MarketResult
+MODES = ("sequential", "concurrent")
 
 
 class MetricsStore:
     def __init__(self, maxlen: int = 1000) -> None:
         self._records: deque[dict] = deque(maxlen=maxlen)
-        self._lock = threading.Lock()
-        self._ids = itertools.count(1)
+        self._lock = threading.Lock()  # várias consultas terminam ao mesmo tempo
+        self._next_id = 1
 
-    def record(
-        self,
-        *,
-        mode: str,
-        kind: str,
-        query: str,
-        total_ms: float,
-        results: list[MarketResult],
-        source: str = "loja",
-        resources: dict | None = None,
-    ) -> dict:
-        markets = sorted((r.timing() for r in results), key=lambda t: t["start_ms"])
-        rec = {
-            "id": next(self._ids),
-            "ts": time.time(),
-            "mode": mode,
-            "kind": kind,  # search | basket
-            "source": source,  # loja | benchmark
-            "query": query,
-            "total_ms": round(total_ms, 2),
-            "ok_count": sum(1 for r in results if r.ok),
-            "error_count": sum(1 for r in results if not r.ok),
-            "markets": markets,
-            "resources": resources or {},
-        }
+    def add(self, record: dict) -> dict:
         with self._lock:
-            self._records.append(rec)
-        return rec
+            record["id"] = self._next_id
+            self._next_id += 1
+            self._records.append(record)
+        return record
 
     def records(self, limit: int | None = None) -> list[dict]:
         with self._lock:
@@ -57,32 +34,23 @@ class MetricsStore:
         with self._lock:
             self._records.clear()
 
-    def summary(self) -> dict:
-        return summarize(self.records())
-
     def to_csv(self) -> str:
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(
-            ["id", "timestamp", "modo", "tipo", "origem", "consulta", "tempo_total_ms", "mercados_ok", "mercados_erro",
-             "mercado", "inicio_ms", "fim_ms", "duracao_ms", "conexao_ms", "espera_ms", "bytes_recebidos", "cpu_mercado_ms", "thread", "erro",
-             "cpu_agregador_ms", "cpu_mercados_ms", "threads_pico", "threads_extras", "memoria_agregador_mb"]
-        )
+        writer.writerow(["id", "timestamp", "modo", "tipo", "origem", "consulta", "tempo_total_ms", "mercados_ok", "mercados_erro",
+                         "mercado", "inicio_ms", "fim_ms", "duracao_ms", "tentativas", "bytes_recebidos", "thread", "erro",
+                         "cpu_ms", "threads"])
         for rec in self.records():
             stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(rec["ts"]))
-            res = rec.get("resources") or {}
+            res = rec["resources"]
             for m in rec["markets"]:
-                writer.writerow(
-                    [rec["id"], stamp, rec["mode"], rec["kind"], rec["source"], rec["query"], rec["total_ms"],
-                     rec["ok_count"], rec["error_count"], m["market_id"], m["start_ms"], m["end_ms"],
-                     m["duration_ms"], m["connect_ms"], m["wait_ms"], m["bytes_received"], m["server_cpu_ms"], m["thread"], m["error"] or "",
-                     res.get("agg_cpu_ms"), res.get("server_cpu_ms"), res.get("threads_peak"), res.get("threads_extra"),
-                     res.get("rss_mb")]
-                )
+                writer.writerow([rec["id"], stamp, rec["mode"], rec["kind"], rec["source"], rec["query"], rec["total_ms"],
+                                 rec["ok_count"], rec["error_count"], m["market_id"], m["start_ms"], m["end_ms"], m["duration_ms"],
+                                 m["attempts"], m["bytes_received"], m["thread"], m["error"] or "", m["cpu_ms"], res["threads"]])
         return buf.getvalue()
 
 
-def _stats(values: list[float]) -> dict:
+def stats(values: list[float]) -> dict:
     if not values:
         return {"count": 0, "avg": None, "min": None, "max": None, "stdev": None}
     return {
@@ -95,30 +63,15 @@ def _stats(values: list[float]) -> dict:
 
 
 def summarize(records: list[dict]) -> dict:
-    by_mode = {mode: _stats([r["total_ms"] for r in records if r["mode"] == mode]) for mode in ("sequential", "concurrent")}
-    seq, conc = by_mode["sequential"]["avg"], by_mode["concurrent"]["avg"]
-    per_market: dict[str, list[float]] = {}
-    errors: dict[str, int] = {}
-    for r in records:
-        for m in r["markets"]:
-            if m["ok"]:
-                per_market.setdefault(m["market_id"], []).append(m["duration_ms"])
-            else:
-                errors[m["market_id"]] = errors.get(m["market_id"], 0) + 1
-    resources = {}
-    for mode in ("sequential", "concurrent"):
-        rs = [r["resources"] for r in records if r["mode"] == mode and r.get("resources")]
-        resources[mode] = {
-            key: (round(statistics.fmean(x[key] for x in rs), 4) if rs else None)
-            for key in ("agg_cpu_ms", "server_cpu_ms", "cpu_ms", "cpu_util", "threads_extra", "threads_peak")
-        }
-    return {
-        "requests": len(records),
-        "resources": resources,
-        "sequential": by_mode["sequential"],
-        "concurrent": by_mode["concurrent"],
-        "speedup": round(seq / conc, 2) if seq and conc else None,
-        "markets": {
-            mid: {**_stats(vals), "errors": errors.get(mid, 0)} for mid, vals in per_market.items()
-        } | {mid: {**_stats([]), "errors": n} for mid, n in errors.items() if mid not in per_market},
+    """Média de tempo por modo, speedup (sequencial ÷ concorrente) e média de CPU/threads."""
+    by_mode = {mode: [r for r in records if r["mode"] == mode] for mode in MODES}
+    summary = {mode: stats([r["total_ms"] for r in recs]) for mode, recs in by_mode.items()}
+    seq, conc = summary["sequential"]["avg"], summary["concurrent"]["avg"]
+    summary["speedup"] = round(seq / conc, 2) if seq and conc else None
+    summary["requests"] = len(records)
+    summary["resources"] = {
+        mode: {key: round(statistics.fmean(r["resources"][key] for r in recs), 3) if recs else None
+               for key in ("cpu_ms", "cpu_util", "threads")}
+        for mode, recs in by_mode.items()
     }
+    return summary

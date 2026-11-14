@@ -64,7 +64,7 @@ def test_market_config_and_metrics(client):
     csv = client.get("/api/metrics/export.csv").text
     assert csv.splitlines()[0].startswith("id,timestamp,modo")
     assert len(csv.splitlines()) == 1 + 5
-    assert "bytes_recebidos" in csv.splitlines()[0]
+    assert "tentativas" in csv.splitlines()[0]
 
 
 def test_benchmark_reports_speedup(client):
@@ -90,8 +90,8 @@ def test_resources_are_measured(client):
     assert seq.status_code == conc.status_code == 200
     records = client.get("/api/metrics/history").json()["records"]
     by_mode = {r["mode"]: r["resources"] for r in records}
-    assert by_mode["concurrent"]["threads_extra"] >= 5  # uma thread por mercado
-    assert by_mode["sequential"]["threads_extra"] <= 1  # a própria thread da rota
+    assert by_mode["concurrent"]["threads"] == 5  # uma thread por mercado
+    assert by_mode["sequential"]["threads"] == 1  # a própria thread da rota
     for res in by_mode.values():
-        assert res["server_cpu_ms"] > 0 and res["agg_cpu_ms"] >= 0 and res["rss_mb"] > 0
-    assert all(m["server_cpu_ms"] > 0 for r in records for m in r["markets"])
+        assert res["cpu_ms"] > 0
+    assert all(m["cpu_ms"] > 0 for r in records for m in r["markets"])

@@ -43,9 +43,9 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 
 1. **Loja:** busque "arroz" no modo Sequencial e depois no Concorrente (alternador no topo). A faixa abaixo da busca mostra o tempo e as barras de cada conexão TCP: escada no sequencial, barras paralelas no concorrente.
 2. **Produto:** clique num produto para ver os mercados ordenados por preço e o selo "Menor preço".
-3. **Cesta:** adicione itens e clique em "Comparar cesta nos 5 mercados".
-4. **Painel ao vivo:** speedup médio, linha do tempo das últimas consultas, histórico, latência por mercado, consumo de recursos (CPU, threads, memória) e as requisições chegando por WebSocket.
-5. **Falhas:** na seção "Mercados" do painel, tire um mercado do ar ou suba a latência acima de 3 s. A busca concorrente continua respondendo com os outros mercados.
+3. **Cesta:** adicione itens e clique em "Comparar nos 5 mercados".
+4. **Painel ao vivo:** speedup médio, linha do tempo da última consulta de cada modo, recursos (CPU e threads) e as consultas chegando por WebSocket.
+5. **Falhas e retry:** na seção "Mercados" do painel, tire um mercado do ar. O agregador tenta de novo 3 vezes (esperando 0,5 s, 1 s e 2 s) antes de desistir: no sequencial essa espera trava a fila inteira (~3,5 s a mais); no concorrente ela acontece enquanto os outros mercados respondem. Latência acima de 3 s vira timeout (sem retry).
 6. **Benchmark:** rode 5 ou 10 rodadas e exporte o CSV.
 7. **Prova de que é TCP de verdade:** `lsof -nP -iTCP:5001-5005 -sTCP:LISTEN` lista os 5 processos Python escutando.
 
@@ -55,22 +55,26 @@ Abra http://localhost:5173. A documentação interativa da API fica em http://lo
 cd backend && .venv/bin/python -m pytest
 ```
 
-34 testes: framing do protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta, histórico), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, mercado fora do ar, conexão recusada, timeout, rotas da API, WebSocket e medição de recursos.
+36 testes: protocolo (inclusive mensagem fragmentada), comandos do servidor (busca, cesta, histórico), concorrente mais rápido que sequencial, consultas sobrepostas em threads distintas, retry de mercado fora do ar (espera crescente, volta no meio, custo no sequencial), conexão recusada, timeout, rotas da API, WebSocket e medição de recursos.
 
 ## Estrutura
 
 ```
 backend/
-  common/protocol.py        framing TCP: 4 bytes de tamanho + JSON
-  common/config.py          mercados, portas, latências
-  markets/catalog.py        95 tipos × marcas × tamanhos = 1.740 SKUs
-  markets/seed.py           gera data/<mercado>.db (produtos + 180 dias de histórico, 82 MB no total)
-  markets/server.py         servidor TCP (socket/bind/listen/accept + thread por conexão)
-  aggregator/tcp_client.py  cliente TCP com medição de tempos
-  aggregator/strategies.py  sequential() e concurrent() (ThreadPoolExecutor)
-  aggregator/events.py      eventos thread-safe → WebSocket
-  aggregator/metrics.py     histórico, estatísticas, CSV
-  aggregator/main.py        rotas FastAPI
+  config.py                 mercados, portas, timeout e retry
+  protocol.py               protocolo TCP: uma mensagem JSON por linha
+  markets/                  ── os 5 supermercados (um processo cada)
+    server.py               servidor TCP: ThreadingTCPServer = uma thread por conexão
+    database.py             consultas ao SQLite do mercado
+    catalog.py              95 tipos × marcas × tamanhos = 1.740 SKUs
+    seed.py                 gera data/<mercado>.db (produtos + 180 dias de histórico)
+  aggregator/               ── o agregador (FastAPI, porta 8000)
+    main.py                 rotas HTTP e WebSocket
+    core.py                 executa a consulta no modo escolhido e mede
+    strategies.py           sequential() e concurrent()  ← o coração do trabalho
+    client.py               cliente TCP: pergunta a um mercado, com retry
+    compare.py              menor preço, ordenação, cesta mais barata
+    events.py, metrics.py   eventos ao vivo e histórico/CSV
   run_all.py                sobe tudo
   tests/
 frontend/                   Vite + React + TypeScript + Tailwind + Recharts

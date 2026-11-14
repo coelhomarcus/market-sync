@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { bytes, clock, duration, int } from '../../lib/format'
 import { marketColor, marketName, MARKETS, MODE_COLOR, MODE_LABEL } from '../../lib/markets'
-import type { BusEvent, Mode, Resources } from '../../lib/types'
+import type { BusEvent, Mode } from '../../lib/types'
 import { useLive } from '../../state/live'
 import { Timeline, type TimelineEntry } from '../Timeline'
 
@@ -72,22 +72,24 @@ function groupEvents(log: BusEvent[]): Item[] {
 }
 
 function describeRequest(e: BusEvent) {
-  if (e.kind === 'basket') return `Comparação de ${e.query}`
-  return e.query ? `Busca por “${e.query}”` : 'Catálogo inteiro'
+  if (e.kind === 'basket') return `Cesta: ${e.query}`
+  return e.query ? `“${e.query}”` : 'Catálogo inteiro'
 }
 
 function rawLine(e: BusEvent) {
   switch (e.type) {
     case 'request_start':
-      return 'requisição recebida pelo agregador'
+      return 'agregador recebeu a consulta'
     case 'market_connect':
       return `connect() → ${marketName(e.market!)} (${e.thread})`
     case 'market_response':
       return `${marketName(e.market!)} respondeu ${e.count} itens, ${bytes(e.bytes as number)}, em ${duration(e.duration_ms)}`
+    case 'market_retry':
+      return `${marketName(e.market!)} fora do ar: tentativa ${e.attempt} falhou, tenta de novo em ${duration(e.wait_ms)}`
     case 'market_error':
       return `${marketName(e.market!)}: ${e.error}`
     case 'request_end':
-      return `resposta enviada ao navegador: ${duration(e.total_ms)}`
+      return `resposta enviada ao site: ${duration(e.total_ms)}`
     default:
       return e.type
   }
@@ -98,7 +100,7 @@ function describeSystem(e: BusEvent) {
     case 'market_config':
       return `${marketName(e.market!)} reconfigurado: ${e.online ? 'no ar' : 'fora do ar'}, latência ${duration(e.latency_ms)}`
     case 'benchmark_start':
-      return `Benchmark iniciado: ${e.runs} rodadas de cada modo, busca “${e.query}”`
+      return `Benchmark: ${e.runs} rodadas de “${e.query}”`
     case 'benchmark_end':
       return 'Benchmark concluído'
     case 'metrics_reset':
@@ -115,8 +117,6 @@ function RequestCard({ item }: { item: RequestItem }) {
   const lastMs = Math.max(0, ...entries.map((m) => m.end_ms ?? m.start_ms))
   const total = item.end?.total_ms
   const failures = entries.filter((m) => m.ok === false)
-  const received = entries.reduce((n, m) => n + (m.bytes ?? 0), 0)
-  const res = (item.end?.record as { resources?: Resources } | undefined)?.resources
 
   return (
     <li className={`rounded-xl border bg-white p-3 ${failures.length ? 'border-tomate/40' : 'border-linha'}`}>
@@ -148,17 +148,8 @@ function RequestCard({ item }: { item: RequestItem }) {
         <span>
           {entries.filter((m) => m.ok).length} de {MARKETS.length} mercados
         </span>
-        {received > 0 && <span>{bytes(received)} recebidos</span>}
-        {res && (
-          <>
-            <span title="Threads criadas pelo agregador só para esta requisição">
-              {res.threads_extra === 0 ? 'nenhuma thread extra' : res.threads_extra === 1 ? '1 thread extra' : `${res.threads_extra} threads extras`}
-            </span>
-            <span title="CPU do agregador + CPU dos mercados">CPU {res.cpu_ms.toFixed(1).replace('.', ',')} ms</span>
-          </>
-        )}
         <button onClick={() => setOpen(!open)} aria-expanded={open} className="ml-auto font-semibold text-folha hover:underline">
-          {open ? 'Ocultar eventos' : `Ver ${item.events.length} eventos TCP`}
+          {open ? 'Ocultar' : `${item.events.length} eventos`}
         </button>
       </div>
 
@@ -239,7 +230,7 @@ export function EventLog() {
       <ol className="h-[34rem] space-y-2 overflow-y-auto overscroll-contain bg-papel/60 p-3" aria-live="off" aria-label="Requisições recentes">
         {shown.length === 0 && (
           <li className="p-3 text-sm text-cinza">
-            {items.length === 0 ? 'Nenhuma requisição ainda. Faça uma busca na loja ou rode o benchmark.' : 'Nenhuma requisição com esse filtro.'}
+            {items.length === 0 ? 'Nenhuma consulta ainda.' : 'Nada com esse filtro.'}
           </li>
         )}
         {shown.map((it) =>
@@ -254,9 +245,6 @@ export function EventLog() {
           ),
         )}
       </ol>
-      <p className="border-t border-linha px-4 py-2 text-xs text-cinza">
-        {int(items.filter((i) => i.type === 'request').length)} requisições guardadas nesta sessão do painel; as mais novas ficam no topo.
-      </p>
     </div>
   )
 }

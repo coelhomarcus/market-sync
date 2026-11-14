@@ -60,9 +60,7 @@ function Row({ m, configure }: { m: MarketStatus; configure: (id: string, cfg: {
         {m.reachable ? (
           <>
             <p className="tabular-nums">{int(m.products ?? 0)} produtos</p>
-            <p className="text-xs text-cinza tabular-nums">
-              {int(m.history_rows ?? 0)} preços, {bytes(m.db_bytes)}
-            </p>
+            <p className="text-xs text-cinza tabular-nums">{bytes(m.db_bytes)}</p>
           </>
         ) : (
           <p className="text-xs text-cinza">—</p>
@@ -70,7 +68,7 @@ function Row({ m, configure }: { m: MarketStatus; configure: (id: string, cfg: {
       </div>
       <p className="text-sm tabular-nums lg:text-right">
         {m.reachable ? int(m.requests_served ?? 0) : '—'}
-        <span className="text-cinza lg:hidden"> consultas atendidas</span>
+        <span className="text-cinza lg:hidden"> consultas</span>
       </p>
       <div className="text-right">
         <button
@@ -108,14 +106,14 @@ export function MarketsTable({
         <span>Mercado</span>
         <span>Situação</span>
         <span>
-          Latência simulada <span className="font-normal">(o traço marca o timeout de 3 s)</span>
+          Latência <span className="font-normal">(traço = timeout de 3 s)</span>
         </span>
-        <span>Banco SQLite</span>
+        <span>Banco</span>
         <span className="text-right">Consultas</span>
         <span />
       </div>
       {error && <p className="px-5 py-3 text-sm text-tomate">{error}</p>}
-      {markets.length === 0 && !error && <p className="px-5 py-6 text-sm text-cinza">Consultando os mercados…</p>}
+      {markets.length === 0 && !error && <p className="px-5 py-6 text-sm text-cinza">Carregando…</p>}
       <ul className="divide-y divide-linha">
         {markets.map((m) => (
           <Row key={m.id} m={m} configure={configure} />

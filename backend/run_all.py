@@ -12,13 +12,9 @@ import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-BACKEND = Path(__file__).resolve().parent
-sys.path.insert(0, str(BACKEND))
-
-from common.config import MARKET_HOST, MARKETS  # noqa: E402
-from markets.seed import seed_all  # noqa: E402
+from config import BACKEND_DIR as BACKEND, MARKET_HOST, MARKETS
+from markets.seed import seed_all
 
 API_PORT = int(os.environ.get("API_PORT", "8000"))
 

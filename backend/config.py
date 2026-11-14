@@ -1,4 +1,4 @@
-"""Configuração compartilhada: quais mercados existem e onde escutam."""
+"""Configuração do sistema: quais mercados existem, onde escutam e como o agregador se comporta."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent
 DATA_DIR = BACKEND_DIR / "data"
 
 MARKET_HOST = os.environ.get("MARKET_HOST", "127.0.0.1")
-TCP_TIMEOUT_S = float(os.environ.get("TCP_TIMEOUT_S", "3.0"))
+
+# Cliente TCP do agregador
+TCP_TIMEOUT_S = 3.0  # desiste de um mercado que demora mais de 3 s para responder
+RETRIES = 3  # novas tentativas quando o mercado está fora do ar
+RETRY_WAIT_S = 0.5  # espera antes da 1ª nova tentativa; dobra a cada vez (0,5 → 1 → 2 s)
 
 
 @dataclass(frozen=True)

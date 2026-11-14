@@ -1,12 +1,12 @@
 import socket
 
-from common.protocol import recv_msg, send_msg
+import protocol
 
 
 def ask(port, payload):
-    with socket.create_connection(("127.0.0.1", port), timeout=3) as s:
-        send_msg(s, payload)
-        return recv_msg(s)
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as s, s.makefile("rwb") as f:
+        protocol.send(f, payload)
+        return protocol.receive(f)[0]
 
 
 def test_search_returns_products_sorted_by_price(market_cluster):
@@ -34,14 +34,13 @@ def test_search_by_brand_and_size(market_cluster):
 def test_empty_query_returns_whole_assortment(market_cluster):
     servers, _ = market_cluster
     items = ask(servers[0].port, {"cmd": "SEARCH", "q": ""})["data"]["items"]
-    assert len(items) == servers[0].status()["products"] > 1000
+    assert len(items) == servers[0].market.products > 1000
 
 
 def test_basket_total(market_cluster):
     servers, _ = market_cluster
     slug = ask(servers[0].port, {"cmd": "SEARCH", "q": "arroz"})["data"]["items"][0]["slug"]
-    resp = ask(servers[0].port, {"cmd": "BASKET", "items": [{"slug": slug, "qty": 2}, {"slug": "nao-existe", "qty": 1}]})
-    data = resp["data"]
+    data = ask(servers[0].port, {"cmd": "BASKET", "items": [{"slug": slug, "qty": 2}, {"slug": "nao-existe", "qty": 1}]})["data"]
     assert data["missing"] == ["nao-existe"]
     assert data["total"] == round(data["lines"][0]["price"] * 2, 2)
 
@@ -71,9 +70,9 @@ def test_offline_market_closes_connection_but_accepts_admin(market_cluster):
 
 def test_each_market_has_its_own_prices(market_cluster):
     servers, _ = market_cluster
-    prices = {
-        s.market.id: ask(s.port, {"cmd": "SEARCH", "q": "arroz branco"})["data"]["items"][0]["price"]
-        for s in servers
-        if ask(s.port, {"cmd": "SEARCH", "q": "arroz branco"})["data"]["items"]
-    }
-    assert len(set(prices.values())) > 1
+    prices = set()
+    for s in servers:
+        items = ask(s.port, {"cmd": "SEARCH", "q": "arroz branco"})["data"]["items"]
+        if items:
+            prices.add(items[0]["price"])
+    assert len(prices) > 1

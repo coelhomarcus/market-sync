@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { brl, duration } from '../lib/format'
 import { marketColor, MARKET_BY_ID, MODE_LABEL } from '../lib/markets'
 import type { BasketResponse } from '../lib/types'
 import { useApp } from '../state/app'
+import { useLiveQuery } from '../state/live'
 import { Drawer } from './Drawer'
 import { PriceTag } from './PriceTag'
 import { ProductImage } from './ProductImage'
@@ -14,18 +15,33 @@ export function CartDrawer() {
   const [result, setResult] = useState<BasketResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [startedAt, setStartedAt] = useState(0)
+  const token = useRef(0)
+  const live = useLiveQuery('basket', loading, startedAt)
 
   const compare = async () => {
+    const my = ++token.current
+    setResult(null) // o resultado anterior some: dá para sentir o tempo da nova consulta
     setLoading(true)
     setError(null)
+    setStartedAt(performance.now())
     try {
-      setResult(await api.basket(mode, cart.map((i) => ({ slug: i.slug, qty: i.qty }))))
+      const res = await api.basket(mode, cart.map((i) => ({ slug: i.slug, qty: i.qty })))
+      if (my === token.current) setResult(res)
     } catch (e) {
-      setError((e as Error).message)
+      if (my === token.current) setError((e as Error).message)
     } finally {
-      setLoading(false)
+      if (my === token.current) setLoading(false)
     }
   }
+
+  // trocou o modo com uma comparação na tela: compara de novo no modo novo
+  const shownMode = useRef(mode)
+  useEffect(() => {
+    if (shownMode.current === mode) return
+    shownMode.current = mode
+    if (result || loading) void compare()
+  }, [mode])
 
   const names = Object.fromEntries(cart.map((i) => [i.slug, `${i.name}${i.brand ? ` ${i.brand}` : ''}`]))
   const best = result?.cheapest
@@ -35,7 +51,7 @@ export function CartDrawer() {
       {cart.length === 0 ? (
         <div className="p-8 text-center">
           <p className="font-display text-xl font-bold">A cesta está vazia</p>
-          <p className="mt-1 text-cinza">Adicione produtos pelo botão + para descobrir em qual mercado a compra inteira sai mais barata.</p>
+          <p className="mt-1 text-cinza">Adicione produtos pelo botão +.</p>
         </div>
       ) : (
         <>
@@ -68,7 +84,7 @@ export function CartDrawer() {
               disabled={loading}
               className="rounded-full bg-folha px-5 py-2.5 font-semibold text-white hover:bg-folha-escura disabled:opacity-60"
             >
-              {loading ? 'Consultando os mercados…' : 'Comparar cesta nos 5 mercados'}
+              {loading ? 'Consultando…' : 'Comparar nos 5 mercados'}
             </button>
             <span className="text-sm text-cinza">Modo {MODE_LABEL[mode].toLowerCase()}</span>
             <button onClick={() => (clearCart(), setResult(null))} className="ml-auto text-sm text-cinza underline-offset-2 hover:underline">
@@ -77,12 +93,26 @@ export function CartDrawer() {
           </div>
           {error && <p className="m-5 rounded-lg bg-tomate/10 p-3 text-sm text-tomate">{error}</p>}
 
+          {loading && (
+            <section className="space-y-3 p-5" aria-live="polite">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-display text-lg font-bold">Consultando os mercados…</h3>
+                <span className="font-display text-2xl font-bold tabular-nums" style={{ color: mode === 'sequential' ? 'var(--color-seq)' : 'var(--color-conc)' }}>
+                  {duration(live.elapsed)}
+                </span>
+              </div>
+              <div className="rounded-xl border border-linha bg-white p-4">
+                <Timeline entries={live.entries} scaleMs={Math.max(live.elapsed * 1.15, 1500)} nowMs={live.elapsed} />
+              </div>
+            </section>
+          )}
+
           {result && (
             <section className="space-y-4 p-5" aria-live="polite">
               <div className="flex items-baseline justify-between">
-                <h3 className="font-display text-lg font-bold">Total da cesta por mercado</h3>
-                <span className="text-sm text-cinza tabular-nums">
-                  {MODE_LABEL[result.mode]}: {duration(result.total_ms)}
+                <h3 className="font-display text-lg font-bold">Total por mercado</h3>
+                <span className="font-display text-2xl font-bold tabular-nums" style={{ color: result.mode === 'sequential' ? 'var(--color-seq)' : 'var(--color-conc)' }}>
+                  {duration(result.total_ms)}
                 </span>
               </div>
               <ol className="space-y-2">
@@ -101,14 +131,14 @@ export function CartDrawer() {
                             {!m.ok
                               ? `Não respondeu: ${m.error}`
                               : m.complete
-                                ? 'Tem todos os itens'
-                                : `Faltam: ${m.missing!.map((s) => names[s] ?? s).join(', ')}`}
+                                ? 'Tem tudo'
+                                : `Falta: ${m.missing!.map((s) => names[s] ?? s).join(', ')}`}
                           </p>
                         </div>
                         {m.ok &&
                           (isBest ? (
                             <div className="text-right">
-                              <span className="mb-1 block text-xs font-bold text-tomate">Cesta mais barata</span>
+                              <span className="mb-1 block text-xs font-bold text-tomate">Mais barata</span>
                               <PriceTag price={m.total!} size="sm" tone="tomate" />
                             </div>
                           ) : (
@@ -122,11 +152,10 @@ export function CartDrawer() {
               {result.best_mix.lines.length > 0 && (
                 <div className="rounded-xl bg-gema-clara p-4 text-sm">
                   <p>
-                    Comprando cada item no mercado onde ele é mais barato, a cesta sai por <strong>{brl(result.best_mix.total)}</strong>
+                    Cada item no mercado mais barato: <strong>{brl(result.best_mix.total)}</strong>
                     {result.best_mix.savings_vs_cheapest != null && result.best_mix.savings_vs_cheapest > 0 && (
-                      <> — {brl(result.best_mix.savings_vs_cheapest)} a menos que a cesta mais barata em um único mercado</>
+                      <> ({brl(result.best_mix.savings_vs_cheapest)} a menos)</>
                     )}
-                    .
                   </p>
                   <ul className="mt-2 space-y-0.5 text-cinza">
                     {result.best_mix.lines.map((l) => (
@@ -139,7 +168,7 @@ export function CartDrawer() {
                 </div>
               )}
               <div className="rounded-xl border border-linha bg-white p-4">
-                <p className="mb-3 text-sm font-semibold">Linha do tempo da consulta</p>
+                <p className="mb-3 text-sm font-semibold">Tempo de cada mercado</p>
                 <Timeline entries={result.timings} scaleMs={result.total_ms} />
               </div>
             </section>

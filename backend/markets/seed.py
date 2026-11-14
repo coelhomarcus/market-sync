@@ -14,15 +14,12 @@ from __future__ import annotations
 
 import random
 import sqlite3
-import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from common.config import DATA_DIR, MARKETS, MarketInfo  # noqa: E402
-from markets.catalog import CATALOG, search_text  # noqa: E402
+from config import DATA_DIR, MARKETS, MarketInfo
+from markets.catalog import CATALOG, search_text
 
 HISTORY_DAYS = 180
 # data de referência fixa: os dados ficam iguais em qualquer dia em que o seed rodar

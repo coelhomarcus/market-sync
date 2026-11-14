@@ -1,67 +1,65 @@
+import io
 import socket
-import struct
 import threading
 
 import pytest
 
-from common.protocol import HEADER, ProtocolError, encode, recv_msg, send_msg
+from protocol import ProtocolError, receive, send
+
+
+def pair():
+    a, b = socket.socketpair()
+    return a, b, a.makefile("rwb"), b.makefile("rwb")
 
 
 def test_roundtrip_with_unicode():
-    a, b = socket.socketpair()
-    with a, b:
-        send_msg(a, {"cmd": "SEARCH", "q": "feijão açúcar"})
-        assert recv_msg(b) == {"cmd": "SEARCH", "q": "feijão açúcar"}
+    a, b, fa, fb = pair()
+    with a, b, fa, fb:
+        sent = send(fa, {"cmd": "SEARCH", "q": "feijão açúcar"})
+        message, received = receive(fb)
+        assert message == {"cmd": "SEARCH", "q": "feijão açúcar"}
+        assert sent == received
 
 
-def test_frame_has_length_prefix():
-    frame = encode({"a": 1})
-    (size,) = HEADER.unpack(frame[:4])
-    assert size == len(frame) - 4
+def test_message_is_one_json_line():
+    buf = io.BytesIO()
+    send(buf, {"a": "x\ny"})  # a quebra de linha dentro do texto vira \n escapado
+    assert buf.getvalue().count(b"\n") == 1 and buf.getvalue().endswith(b"\n")
 
 
 def test_message_split_in_many_tcp_segments():
-    """recv() pode devolver pedaços: o framing precisa remontar a mensagem."""
+    """O TCP pode entregar a mensagem em pedaços: readline() junta até achar o \\n."""
     a, b = socket.socketpair()
-    frame = encode({"items": list(range(2000))})
+    buf = io.BytesIO()
+    send(buf, {"items": list(range(2000))})
+    data = buf.getvalue()
 
     def slow_sender():
-        for i in range(0, len(frame), 7):
-            a.sendall(frame[i : i + 7])
+        for i in range(0, len(data), 7):
+            a.sendall(data[i : i + 7])
 
-    with a, b:
+    with a, b, b.makefile("rb") as fb:
         t = threading.Thread(target=slow_sender)
         t.start()
-        assert recv_msg(b) == {"items": list(range(2000))}
+        assert receive(fb)[0] == {"items": list(range(2000))}
         t.join()
 
 
 def test_two_messages_back_to_back():
-    a, b = socket.socketpair()
-    with a, b:
-        a.sendall(encode({"n": 1}) + encode({"n": 2}))
-        assert recv_msg(b) == {"n": 1}
-        assert recv_msg(b) == {"n": 2}
+    stream = io.BytesIO(b'{"n":1}\n{"n":2}\n')
+    assert receive(stream)[0] == {"n": 1}
+    assert receive(stream)[0] == {"n": 2}
 
 
 def test_clean_close_returns_none():
-    a, b = socket.socketpair()
-    a.close()
-    with b:
-        assert recv_msg(b) is None
+    assert receive(io.BytesIO(b"")) == (None, 0)
 
 
 def test_close_in_the_middle_raises():
-    a, b = socket.socketpair()
-    a.sendall(struct.pack(">I", 100) + b'{"inc')
-    a.close()
-    with b, pytest.raises(ProtocolError):
-        recv_msg(b)
+    with pytest.raises(ProtocolError):
+        receive(io.BytesIO(b'{"inc'))
 
 
-def test_absurd_size_rejected():
-    a, b = socket.socketpair()
-    with a, b:
-        a.sendall(struct.pack(">I", 2**31))
-        with pytest.raises(ProtocolError):
-            recv_msg(b)
+def test_invalid_json_raises():
+    with pytest.raises(ProtocolError):
+        receive(io.BytesIO(b"isso nao e json\n"))

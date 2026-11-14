@@ -49,7 +49,7 @@ export function Benchmark() {
         disabled={running}
         className="mt-3 w-full rounded-full bg-folha px-5 py-2.5 font-semibold text-white hover:bg-folha-escura disabled:opacity-60"
       >
-        {running ? `Rodando… ${benchmark.done}/${benchmark.runs || runs}` : `Rodar benchmark (${runs}× cada modo)`}
+        {running ? `Rodando… ${benchmark.done}/${benchmark.runs || runs}` : 'Rodar benchmark'}
       </button>
       {running && (
         <div className="mt-2 h-1.5 rounded-full bg-papel" role="progressbar" aria-valuemin={0} aria-valuemax={benchmark.runs || runs} aria-valuenow={benchmark.done}>
@@ -58,12 +58,6 @@ export function Benchmark() {
       )}
       {error && <p className="mt-3 text-sm text-tomate">{error}</p>}
 
-      {!result && !running && (
-        <p className="mt-4 text-sm text-cinza">
-          Cada rodada faz a busca uma vez em cada modo. Com 5 rodadas e as latências padrão, leva cerca de 25 s. O resultado aparece aqui e as
-          consultas entram no resumo e nos gráficos acima.
-        </p>
-      )}
       {result && (
         <div className="mt-4">
           <table className="w-full text-sm tabular-nums">
@@ -73,7 +67,7 @@ export function Benchmark() {
                 <th className="py-1 text-right font-medium">Média</th>
                 <th className="py-1 text-right font-medium">Mín.</th>
                 <th className="py-1 text-right font-medium">Máx.</th>
-                <th className="py-1 text-right font-medium">Desvio</th>
+
               </tr>
             </thead>
             <tbody>
@@ -83,30 +77,13 @@ export function Benchmark() {
                   <td className="py-1.5 text-right">{duration(result[m].avg)}</td>
                   <td className="py-1.5 text-right">{duration(result[m].min)}</td>
                   <td className="py-1.5 text-right">{duration(result[m].max)}</td>
-                  <td className="py-1.5 text-right">{duration(result[m].stdev)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {result.resources?.sequential && result.resources?.concurrent && (
-            <dl className="mt-3 grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-1 text-sm tabular-nums">
-              <dt className="text-cinza" />
-              <dd className="text-xs text-cinza">Sequencial</dd>
-              <dd className="text-xs text-cinza">Concorrente</dd>
-              <dt className="text-cinza">CPU por consulta</dt>
-              <dd>{num(result.resources.sequential.cpu_ms ?? 0, 1)} ms</dd>
-              <dd>{num(result.resources.concurrent.cpu_ms ?? 0, 1)} ms</dd>
-              <dt className="text-cinza">Ocupação da CPU</dt>
-              <dd>{num((result.resources.sequential.cpu_util ?? 0) * 100, 1)}%</dd>
-              <dd>{num((result.resources.concurrent.cpu_util ?? 0) * 100, 1)}%</dd>
-              <dt className="text-cinza">Threads extras</dt>
-              <dd>{num(result.resources.sequential.threads_extra ?? 0, 0)}</dd>
-              <dd>{num(result.resources.concurrent.threads_extra ?? 0, 0)}</dd>
-            </dl>
-          )}
           {result.speedup && (
             <p className="mt-3 rounded-lg bg-gema-clara px-3 py-2 text-sm">
-              Speedup de <strong>{num(result.speedup, 2)}×</strong> com {result.runs} rodadas de “{result.query}”.
+              Concorrente <strong>{num(result.speedup, 1)}× mais rápido</strong> ({result.runs} rodadas de “{result.query}”).
             </p>
           )}
         </div>

@@ -1,17 +1,21 @@
 import dataclasses
 import socket
-import sys
-from pathlib import Path
+import threading
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from common.config import MARKETS  # noqa: E402
-from markets.seed import seed_market  # noqa: E402
-from markets.server import MarketServer  # noqa: E402
+import config
+from config import MARKETS
+from markets.seed import seed_market
+from markets.server import Market, MarketServer
 
 TEST_LATENCIES = [100, 150, 200, 250, 300]
+
+
+@pytest.fixture(autouse=True)
+def fast_retry(monkeypatch):
+    """Nos testes, as novas tentativas esperam 10 ms em vez de 0,5 s."""
+    monkeypatch.setattr(config, "RETRY_WAIT_S", 0.01)
 
 
 @pytest.fixture(scope="session")
@@ -27,15 +31,16 @@ def market_dbs(tmp_path_factory):
 def market_cluster(market_dbs):
     """Sobe os 5 mercados em threads, em portas livres, com os bancos de teste."""
     servers, infos = [], []
-    for market, latency in zip(MARKETS, TEST_LATENCIES):
-        db = market_dbs / f"{market.id}.db"
-        server = MarketServer(market, port=0, db_path=db, latency_ms=latency, jitter=0.0)
-        server.start_in_thread()
+    for info, latency in zip(MARKETS, TEST_LATENCIES):
+        market = Market(info, db_path=market_dbs / f"{info.id}.db", latency_ms=latency, jitter=0.0)
+        server = MarketServer(market, port=0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
         servers.append(server)
-        infos.append(dataclasses.replace(market, port=server.port, latency_ms=latency))
+        infos.append(dataclasses.replace(info, port=server.port, latency_ms=latency))
     yield servers, infos
     for s in servers:
         s.shutdown()
+        s.server_close()
 
 
 @pytest.fixture

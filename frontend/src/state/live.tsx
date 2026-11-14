@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { TimelineEntry } from '../components/Timeline'
 import { api } from '../lib/api'
 import type { BusEvent, MetricRecord, Mode } from '../lib/types'
 
@@ -10,7 +11,7 @@ export interface LiveRequest {
   query: string
   source: string
   startedAt: number // performance.now() local
-  markets: Record<string, { start_ms: number; end_ms?: number; ok?: boolean; error?: string }>
+  markets: Record<string, { start_ms: number; end_ms?: number; ok?: boolean; error?: string; attempts?: number; last_ms?: number }>
   total_ms?: number
   done: boolean
 }
@@ -36,18 +37,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [benchmark, setBenchmark] = useState({ running: false, done: 0, runs: 0 })
   const [marketsVersion, setMarketsVersion] = useState(0)
   const seen = useRef(new Set<number>())
-
-  useEffect(() => {
-    api
-      .metricsHistory()
-      .then((h) =>
-        setRecords((prev) => {
-          const ids = new Set(prev.map((r) => r.id))
-          return [...h.records.filter((r) => !ids.has(r.id)), ...prev].sort((a, b) => a.id - b.id)
-        }),
-      )
-      .catch(() => {})
-  }, [])
 
   useEffect(() => {
     let ws: WebSocket | null = null
@@ -78,6 +67,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           )
           break
         case 'market_connect':
+        case 'market_retry':
         case 'market_response':
         case 'market_error':
           setLive((prev) =>
@@ -85,10 +75,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
               if (r.request_id !== e.request_id) return r
               const m = { ...(r.markets[e.market!] ?? { start_ms: e.t_ms ?? 0 }) }
               if (e.type === 'market_connect') m.start_ms = e.t_ms ?? 0
+              else if (e.type === 'market_retry') {
+                m.attempts = (e.attempt ?? 1) + 1
+                m.last_ms = e.t_ms
+              }
               else {
                 m.end_ms = e.t_ms
                 m.ok = e.type === 'market_response'
                 m.error = e.error
+                m.attempts = e.attempts
               }
               return { ...r, markets: { ...r.markets, [e.market!]: m } }
             }),
@@ -122,7 +117,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const connect = () => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       ws = new WebSocket(`${proto}://${location.host}/ws/events`)
-      ws.onopen = () => setConnected(true)
+      ws.onopen = () => {
+        setConnected(true)
+        // a cada (re)conexão, o histórico vem do agregador: se ele reiniciou, os dados velhos somem
+        api
+          .metricsHistory()
+          .then((h) => setRecords(h.records))
+          .catch(() => {})
+      }
       ws.onclose = () => {
         setConnected(false)
         if (!closed) retry = setTimeout(connect, 1500)
@@ -156,4 +158,30 @@ export function useLive() {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error('useLive fora do LiveProvider')
   return ctx
+}
+
+/** Relógio que anda enquanto `active` é verdadeiro, contando a partir de `since` (performance.now). */
+function useElapsed(active: boolean, since: number) {
+  const [now, setNow] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setNow(performance.now() - since), 50)
+    return () => clearInterval(id)
+  }, [active, since])
+  return active ? now : 0
+}
+
+/**
+ * Acompanha, pelos eventos do WebSocket, uma consulta da loja que ainda está carregando:
+ * quanto tempo já passou e como está cada mercado (para desenhar a linha do tempo ao vivo).
+ */
+export function useLiveQuery(kind: 'search' | 'basket', loading: boolean, startedAt: number) {
+  const { live } = useLive()
+  const clock = useElapsed(loading, startedAt)
+  const req = loading ? live.find((r) => r.source === 'loja' && r.kind === kind && r.startedAt >= startedAt - 150) : undefined
+  const markets = Object.entries(req?.markets ?? {})
+  const entries: TimelineEntry[] = markets.map(([market_id, m]) => ({ market_id, ...m }))
+  // o relógio local pode atrasar com a aba em segundo plano; os eventos do servidor não
+  const elapsed = Math.max(clock, ...markets.map(([, m]) => m.end_ms ?? m.last_ms ?? m.start_ms))
+  return { elapsed, entries }
 }
