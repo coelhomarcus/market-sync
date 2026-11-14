@@ -6,10 +6,16 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = Path(__file__).resolve().parent.parent  # comum/ fica dentro de backend/
 DATA_DIR = BACKEND_DIR / "data"
 
 MARKET_HOST = os.environ.get("MARKET_HOST", "127.0.0.1")
+
+# Agregador: porta TCP onde os clientes (pacotes cliente/ e experimentos/) fazem as pesquisas.
+# A 5000 fica de fora porque no macOS ela é do AirPlay Receiver.
+AGGREGATOR_HOST = os.environ.get("AGGREGATOR_HOST", "127.0.0.1")
+AGGREGATOR_TCP_PORT = int(os.environ.get("AGGREGATOR_TCP_PORT", "5050"))
+CLIENT_IDLE_TIMEOUT_S = 300.0  # o agregador encerra a conexão de um cliente parado há 5 min
 
 # Cliente TCP do agregador
 TCP_TIMEOUT_S = 3.0  # desiste de um mercado que demora mais de 3 s para responder

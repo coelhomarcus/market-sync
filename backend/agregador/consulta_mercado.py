@@ -16,9 +16,8 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Callable
 
-import config
-import protocol
-from config import MarketInfo
+from comum import config, protocolo
+from comum.config import MarketInfo
 
 Emit = Callable[[str, dict], None]  # publica um evento para o painel ao vivo
 
@@ -66,9 +65,9 @@ def ask_once(market: MarketInfo, payload: dict, timeout: float, result: MarketRe
     with socket.create_connection((config.MARKET_HOST, market.port), timeout=timeout) as sock:
         result.connect_ms = elapsed_ms(start)
         with sock.makefile("rwb") as stream:
-            result.bytes_sent = protocol.send(stream, payload)
+            result.bytes_sent = protocolo.send(stream, payload)
             sent = time.perf_counter()
-            response, result.bytes_received = protocol.receive(stream)
+            response, result.bytes_received = protocolo.receive(stream)
             result.wait_ms = elapsed_ms(sent)
     if response is None:
         raise MarketDown("fechou a conexão sem responder")
@@ -115,7 +114,7 @@ def query_market(
         except socket.timeout:
             result.error = f"tempo esgotado ({timeout:.1f} s)"
             break
-        except (OSError, protocol.ProtocolError) as exc:
+        except (OSError, protocolo.ProtocolError) as exc:
             result.error = str(exc) or exc.__class__.__name__
             break
 

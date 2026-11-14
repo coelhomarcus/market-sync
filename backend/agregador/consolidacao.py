@@ -5,9 +5,9 @@ Funções puras (sem rede): recebem a lista de MarketResult e montam o JSON da A
 
 from __future__ import annotations
 
-from markets.catalog import CATALOG
+from mercados.catalogo import CATALOG
 
-from .client import MarketResult
+from .consulta_mercado import MarketResult
 
 CATALOG_ORDER = {p.slug: i for i, p in enumerate(CATALOG)}
 PAGE_SIZE = 40

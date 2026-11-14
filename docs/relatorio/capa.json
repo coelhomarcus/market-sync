@@ -1,0 +1,11 @@
+{
+  "instituicao": "[Nome da instituição]",
+  "curso": "[Curso]",
+  "disciplina": "Sistemas Distribuídos — Trabalho 1",
+  "titulo": "Comparador de Preços de Supermercados",
+  "subtitulo": "Engenharia de Requisitos e Desenvolvimento de um Agregador Concorrente — Relatório Técnico",
+  "integrantes": ["[Integrante 1]", "[Integrante 2]"],
+  "professor": "[Nome do professor]",
+  "local": "[Cidade]",
+  "data": "Novembro de 2026"
+}

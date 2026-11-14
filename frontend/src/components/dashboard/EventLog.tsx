@@ -49,6 +49,7 @@ function groupByRequest(log: BusEvent[]): Request[] {
 function origin(e: BusEvent) {
   if (e.source === 'comparacao') return 'Comparação'
   if (e.source === 'benchmark') return 'Repetir 5×'
+  if (e.source === 'cliente_tcp') return e.kind === 'basket' ? 'Cesta (cliente TCP)' : 'Cliente TCP'
   return e.kind === 'basket' ? 'Cesta' : 'Loja'
 }
 

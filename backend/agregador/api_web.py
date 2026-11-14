@@ -3,13 +3,16 @@
 Cada rota é uma função `def` comum: o FastAPI a executa numa thread própria, então
 uma consulta lenta não trava as outras nem o WebSocket do painel.
 
-Rodar:  uvicorn aggregator.main:app --port 8000   (dentro de backend/)
+Além do HTTP, o mesmo processo abre a porta TCP do agregador (config.AGGREGATOR_TCP_PORT),
+onde o cliente de terminal (python -m cliente) pesquisa usando o protocolo JSON do enunciado.
+
+Rodar:  uvicorn agregador.api_web:app --port 8000   (dentro de backend/)
 """
 
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -19,12 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from config import BACKEND_DIR, MARKETS, MarketInfo
+from comum import config
+from comum.config import BACKEND_DIR, MARKETS, MarketInfo
 
-from . import compare, strategies
-from .client import query_market
-from .core import Aggregator
-from .metrics import summarize
+from . import consolidacao, estrategias
+from .agregador import Aggregator, MarketNotFound, MarketUnreachable
+from .metricas import summarize
+from .servidor_tcp import AggregatorTCPServer
 
 Mode = Literal["sequential", "concurrent"]
 Sort = Literal["destaques", "preco", "economia", "nome"]
@@ -49,9 +53,24 @@ class MarketConfig(BaseModel):
     online: bool | None = None
 
 
-def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
+def create_app(markets: list[MarketInfo] | None = None, tcp_port: int | None = None) -> FastAPI:
+    """tcp_port: se informado, o agregador também atende clientes TCP nessa porta (ver servidor_tcp.py)."""
     agg = Aggregator(list(markets or MARKETS))
-    app = FastAPI(title="Comparador de Preços — Agregador")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        server = None
+        if tcp_port is not None:
+            server = AggregatorTCPServer(agg, port=tcp_port)
+            server.start()
+            print(f"  Agregador TCP em tcp://{config.AGGREGATOR_HOST}:{server.port}  (python -m cliente)", flush=True)
+        app.state.tcp_server = server
+        yield
+        if server is not None:
+            server.stop()
+
+    app = FastAPI(title="Comparador de Preços — Agregador", lifespan=lifespan)
+    app.state.aggregator = agg
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                        allow_methods=["*"], allow_headers=["*"])
 
@@ -59,44 +78,33 @@ def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
 
     @app.get("/api/search/{mode}")
     def search(mode: Mode, q: str = "", category: str = "", sort: Sort = "preco",
-               page: int = Query(1, ge=1), page_size: int = Query(compare.PAGE_SIZE, ge=1, le=200),
+               page: int = Query(1, ge=1), page_size: int = Query(consolidacao.PAGE_SIZE, ge=1, le=200),
                source: Literal["loja", "comparacao"] = "loja") -> dict:
         query = q.strip()[:80]
         results, record = agg.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source)
-        return compare.search_response(results, record, category, sort, page, page_size)
+        return consolidacao.search_response(results, record, category, sort, page, page_size)
 
     @app.post("/api/basket/{mode}")
     def basket(mode: Mode, body: BasketRequest) -> dict:
         wanted = {i.slug: i.qty for i in body.items}
         payload = {"cmd": "BASKET", "items": [{"slug": s, "qty": q} for s, q in wanted.items()]}
         results, record = agg.execute(mode, "basket", payload, f"cesta ({len(wanted)} itens)")
-        return compare.basket_response(wanted, results, record)
+        return consolidacao.basket_response(wanted, results, record)
 
     # ------------------------------------------------------------ painel
 
-    def market_status(market: MarketInfo, payload: dict) -> dict:
-        r = query_market(market, payload, timeout=1.5, retries=0)  # o painel não espera retry
-        info = {"id": market.id, "name": market.name, "short": market.short, "port": market.port,
-                "color": market.color, "default_latency_ms": market.latency_ms}
-        if not r.ok:
-            return {**info, "reachable": False, "online": False, "error": r.error}
-        return {**info, "reachable": True, **r.data}
-
     @app.get("/api/markets")
     def markets_status() -> list[dict]:
-        with ThreadPoolExecutor(max_workers=len(agg.markets)) as pool:
-            return list(pool.map(lambda m: market_status(m, {"cmd": "STATUS"}), agg.markets))
+        return agg.markets_status()
 
     @app.post("/api/markets/{market_id}/config")
     def configure_market(market_id: str, body: MarketConfig) -> dict:
-        market = next((m for m in agg.markets if m.id == market_id), None)
-        if market is None:
-            raise HTTPException(404, f"mercado desconhecido: {market_id}")
-        status = market_status(market, {"cmd": "CONFIG", **body.model_dump(exclude_none=True)})
-        if not status["reachable"]:
-            raise HTTPException(502, f"{market.name} não respondeu: {status['error']}")
-        agg.events.publish("market_config", {"market": market.id, "online": status["online"], "latency_ms": status["latency_ms"]})
-        return status
+        try:
+            return agg.configure_market(market_id, body.latency_ms, body.online)
+        except MarketNotFound:
+            raise HTTPException(404, f"mercado desconhecido: {market_id}") from None
+        except MarketUnreachable as exc:
+            raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/benchmark")
     def benchmark(body: BenchmarkRequest) -> dict:
@@ -105,7 +113,7 @@ def create_app(markets: list[MarketInfo] | None = None) -> FastAPI:
         agg.events.publish("benchmark_start", {"runs": body.runs, "query": query})
         records = []
         for i in range(body.runs):
-            for mode in strategies.MODES if i % 2 == 0 else reversed(strategies.MODES):
+            for mode in estrategias.MODES if i % 2 == 0 else reversed(estrategias.MODES):
                 records.append(agg.execute(mode, "search", {"cmd": "SEARCH", "q": query}, query, source="benchmark")[1])
             agg.events.publish("benchmark_progress", {"done": i + 1, "runs": body.runs})
         result = {**summarize(records), "runs": body.runs, "query": query}
@@ -172,4 +180,4 @@ class SPAStaticFiles(StaticFiles):
             return await super().get_response("index.html", scope)
 
 
-app = create_app()
+app = create_app(tcp_port=config.AGGREGATOR_TCP_PORT)

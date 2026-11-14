@@ -1,12 +1,12 @@
 import socket
 
-import protocol
+from comum import protocolo
 
 
 def ask(port, payload):
     with socket.create_connection(("127.0.0.1", port), timeout=3) as s, s.makefile("rwb") as f:
-        protocol.send(f, payload)
-        return protocol.receive(f)[0]
+        protocolo.send(f, payload)
+        return protocolo.receive(f)[0]
 
 
 def test_search_returns_products_sorted_by_price(market_cluster):

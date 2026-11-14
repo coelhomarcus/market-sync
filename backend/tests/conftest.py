@@ -4,10 +4,10 @@ import threading
 
 import pytest
 
-import config
-from config import MARKETS
-from markets.seed import seed_market
-from markets.server import Market, MarketServer
+from comum import config
+from comum.config import MARKETS
+from mercados.gerar_bancos import seed_market
+from mercados.servidor import Market, MarketServer
 
 TEST_LATENCIES = [100, 150, 200, 250, 300]
 

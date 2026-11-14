@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from protocol import ProtocolError, receive, send
+from comum.protocolo import ProtocolError, receive, send
 
 
 def pair():

@@ -1,0 +1,11 @@
+modo,mercado,fonte,inicio_ms,fim_ms,status,tentativas,erro,tempo_total_ms
+sequencial,aurora,Mercado Aurora,0.02,268.78,sucesso,1,,5971.02
+sequencial,supervila,SuperVila,268.83,780.17,sucesso,1,,5971.02
+sequencial,emporio-sol,Empório Sol,780.24,1574.07,sucesso,1,,5971.02
+sequencial,max-atacarejo,Max Atacarejo,1574.19,2452.35,sucesso,1,,5971.02
+sequencial,ipe,Mercadinho Ipê,2452.45,5970.8,erro,4,fora do ar (4 tentativas),5971.02
+concorrente,aurora,Mercado Aurora,0.13,274.59,sucesso,1,,3821.47
+concorrente,supervila,SuperVila,0.82,557.29,sucesso,1,,3821.47
+concorrente,emporio-sol,Empório Sol,1.12,788.89,sucesso,1,,3821.47
+concorrente,max-atacarejo,Max Atacarejo,1.29,838.66,sucesso,1,,3821.47
+concorrente,ipe,Mercadinho Ipê,1.73,3819.78,erro,4,fora do ar (4 tentativas),3821.47

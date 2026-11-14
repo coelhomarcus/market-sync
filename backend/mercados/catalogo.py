@@ -6,7 +6,7 @@ o que dá alguns milhares de SKUs, como num supermercado de verdade. As marcas s
 fictícias. Cada tipo tem uma foto ilustrativa (frontend/public/products/<image>.jpg),
 baixada do Open Food Facts por `scripts/fetch_images.py` usando `image_query`.
 
-Cada mercado vende parte desse catálogo com preço e estoque próprios (ver seed.py).
+Cada mercado vende parte desse catálogo com preço e estoque próprios (ver gerar_bancos.py).
 """
 
 from __future__ import annotations

@@ -6,13 +6,13 @@ socket() → bind() → listen() → accept():
   * MarketServer (ThreadingTCPServer) aceita as conexões e cria UMA THREAD POR CONEXÃO;
   * MarketHandler.handle() roda dentro dessa thread: lê a pergunta, responde e fecha.
 
-Comandos (uma linha JSON cada, ver protocol.py):
+Comandos (uma linha JSON cada, ver comum/protocolo.py):
     SEARCH  {"q": "arroz"}                         produtos que casam com a busca
     BASKET  {"items": [{"slug": "...", "qty": 2}]} preço da cesta neste mercado
     STATUS                                         situação do mercado (responde mesmo fora do ar)
     CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (usado pelo painel)
 
-Uso:  python -m markets.server --id aurora
+Uso:  python -m mercados.servidor --id aurora
 """
 
 from __future__ import annotations
@@ -25,14 +25,18 @@ import threading
 import time
 from pathlib import Path
 
-import protocol
-from config import MARKET_HOST, MARKETS_BY_ID, MarketInfo
-from markets.database import MarketDatabase
-from markets.seed import is_ready, seed_market
+from comum import protocolo
+from comum.config import MARKET_HOST, MARKETS_BY_ID, MarketInfo
+from mercados.banco import MarketDatabase
+from mercados.gerar_bancos import is_ready, seed_market
 
 log = logging.getLogger("market")
 
 ADMIN_COMMANDS = {"STATUS", "CONFIG"}  # continuam respondendo com o mercado "fora do ar"
+
+
+class WentDown(Exception):
+    """O mercado saiu do ar enquanto uma consulta esperava: a conexão cai sem resposta."""
 
 
 class Market:
@@ -47,6 +51,7 @@ class Market:
         self.latency_ms = info.latency_ms if latency_ms is None else latency_ms
         self.jitter = jitter  # variação aleatória da latência (±15%)
         self.online = True
+        self.down = threading.Event()  # sinalizado quando o mercado sai do ar: acorda quem está esperando
         self.requests_served = 0
         self.lock = threading.Lock()  # várias threads de conexão mexem nos campos acima
 
@@ -64,11 +69,16 @@ class Market:
         raise ValueError(f"comando desconhecido: {cmd!r}")
 
     def simulate_latency(self) -> None:
-        """Finge que o mercado está longe/lento: dorme a latência configurada."""
+        """Finge que o mercado está longe/lento: espera a latência configurada.
+
+        A espera é num Event, não num sleep: se o mercado sair do ar no meio dela,
+        a consulta em andamento também cai (como um servidor que trava de verdade).
+        """
         with self.lock:
             self.requests_served += 1
             latency = self.latency_ms
-        time.sleep(latency * random.uniform(1 - self.jitter, 1 + self.jitter) / 1000)
+        if self.down.wait(latency * random.uniform(1 - self.jitter, 1 + self.jitter) / 1000):
+            raise WentDown
 
     def status(self) -> dict:
         with self.lock:
@@ -87,6 +97,10 @@ class Market:
                 self.latency_ms = max(0, min(10_000, int(request["latency_ms"])))
             if "online" in request:
                 self.online = bool(request["online"])
+                if self.online:
+                    self.down.clear()
+                else:
+                    self.down.set()
         return self.status()
 
 
@@ -96,8 +110,8 @@ class MarketHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         market: Market = self.server.market  # type: ignore[attr-defined]
         try:
-            request, _ = protocol.receive(self.rfile)
-        except protocol.ProtocolError as exc:
+            request, _ = protocolo.receive(self.rfile)
+        except protocolo.ProtocolError as exc:
             log.warning("mensagem inválida de %s: %s", self.client_address, exc)
             return
         if request is None:  # o agregador fechou sem perguntar nada
@@ -110,10 +124,12 @@ class MarketHandler(socketserver.StreamRequestHandler):
         cpu_start = time.thread_time()  # CPU só desta thread (o sleep da latência não conta)
         try:
             response = {"ok": True, "data": market.handle(cmd, request)}
+        except WentDown:
+            return  # caiu durante a consulta: fecha a conexão sem responder
         except Exception as exc:  # erro na pergunta vira resposta de erro, o servidor segue de pé
             response = {"ok": False, "error": str(exc)}
         response["cpu_ms"] = round((time.thread_time() - cpu_start) * 1000, 3)
-        protocol.send(self.wfile, response)
+        protocolo.send(self.wfile, response)
 
 
 class MarketServer(socketserver.ThreadingTCPServer):

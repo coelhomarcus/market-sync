@@ -19,7 +19,7 @@ function average(records: MetricRecord[], mode: Mode, pick: (r: MetricRecord) =>
  * modos fazem a mesma consulta, então tempo e CPU são comparáveis; a loja fica de fora.
  */
 function AverageLine({ records: all }: { records: MetricRecord[] }) {
-  const records = all.filter((r) => r.source !== 'loja')
+  const records = all.filter((r) => r.source === 'comparacao' || r.source === 'benchmark')
   const seq = modeStats(records, 'sequential')
   const conc = modeStats(records, 'concurrent')
   const pairs = Math.min(seq.count, conc.count)

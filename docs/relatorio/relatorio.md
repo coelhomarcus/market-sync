@@ -1,14 +1,16 @@
 # Comparador de Preços de Supermercados — Relatório Técnico
 
-13/11/2026
+Trabalho 1 de Sistemas Distribuídos — Engenharia de Requisitos e Desenvolvimento de um Agregador Concorrente (Tema 1)
+
+14/11/2026
 
 ## Resumo
 
-Consultar cinco supermercados ao mesmo tempo, com uma thread por mercado, reduziu o tempo de resposta de 3,74 s para 1,22 s: um speedup de 3,1×.
+Consultar cinco supermercados ao mesmo tempo, com uma thread por supermercado, reduziu o tempo de uma pesquisa de 3,71 s para 1,16 s: um speedup de 3,2×.
 
-Este relatório descreve um comparador de preços cliente-servidor desenvolvido em Python. Um agregador HTTP (FastAPI) consulta cinco processos independentes, um por supermercado, por meio de sockets TCP e de um protocolo de aplicação próprio. Cada mercado mantém sua própria base SQLite, com 1.352 a 1.690 produtos e entre 243 e 304 mil preços históricos; somados, os cinco bancos têm 7.692 produtos, 1,38 milhão de registros de preço e 82 MB. O agregador oferece duas rotas de busca: uma sequencial, que consulta um mercado de cada vez, e outra concorrente, que usa um `ThreadPoolExecutor`. A interface web (React) exibe os preços ordenados, destaca o menor preço, compara cestas de compras e mostra métricas em tempo real recebidas por WebSocket.
+Este relatório descreve um comparador de preços cliente-servidor desenvolvido em Python. Um **cliente de terminal** envia pesquisas a um **agregador** por socket TCP, com mensagens JSON no formato `{"operacao": "consultar", "produto": "arroz"}`. O agregador consulta cinco **supermercados**, cada um um processo independente com porta TCP e base SQLite próprias, de forma sequencial (um de cada vez) ou concorrente (`ThreadPoolExecutor`, uma thread por supermercado), consolida as ofertas, ordena por preço e aponta o menor. Uma interface web (loja e painel) usa o mesmo agregador por HTTP e WebSocket.
 
-Os experimentos confirmam o modelo esperado: o tempo sequencial se aproxima da soma das latências dos mercados, e o concorrente, da maior delas. Mercados lentos ou fora do ar não interrompem a consulta, que devolve os resultados parciais. A medição de recursos mostra que a concorrência não economiza CPU: o trabalho é o mesmo, mas sobreposto, ao custo de 5 threads extras por requisição.
+Os cinco experimentos obrigatórios, feitos de ponta a ponta pelo cliente TCP, confirmam o modelo esperado: o tempo sequencial se aproxima da soma das latências dos supermercados, e o concorrente, da maior delas. Com latências iguais o ganho chegou a 4,6×. Trinta e dois clientes simultâneos foram atendidos no mesmo tempo que um só, e um supermercado que cai durante a pesquisa não impede a resposta com os outros quatro.
 
 **Palavras-chave:** sockets TCP, multithreading, sistemas distribuídos, agregador, comparação de preços.
 
@@ -16,437 +18,487 @@ Os experimentos confirmam o modelo esperado: o tempo sequencial se aproxima da s
 
 Comparadores de preço, buscadores de passagens e agregadores em geral precisam consultar várias fontes independentes antes de responder ao usuário. Quando essas consultas são feitas uma após a outra, o tempo de resposta cresce com o número de fontes. Quando são feitas ao mesmo tempo, ele passa a depender apenas da fonte mais lenta.
 
-Este trabalho implementa o Tema 1, o comparador de preços de supermercados, para estudar esse efeito com comunicação real por sockets TCP, processos e threads.
+Este trabalho implementa o Tema 1, o comparador de preços de supermercados, para estudar esse efeito com comunicação real por sockets TCP entre processos e com threads.
 
 ### 1.1 Objetivo geral
 
-Desenvolver uma aplicação cliente-servidor que consulte diferentes serviços independentes de forma sequencial e concorrente, usando sockets TCP e multithreading.
+Desenvolver uma aplicação cliente-servidor que realize consultas sequenciais e concorrentes a diferentes serviços independentes, utilizando sockets TCP e multithreading.
 
 ### 1.2 Objetivos específicos
 
-1. Especificar a aplicação com técnicas de Engenharia de Software: atores, requisitos e casos de uso (seções 2 e 3).
-2. Modelar a arquitetura e o protocolo de comunicação (seções 4 e 5).
-3. Implementar a comunicação entre processos com sockets TCP e um agregador com consultas sequenciais e concorrentes (seção 6).
-4. Testar o sistema de forma automatizada (seção 7).
-5. Medir o impacto da concorrência no desempenho e analisar os resultados (seções 8 e 9).
+1. Especificar a aplicação com técnicas de Engenharia de Software: problema, escopo, atores, requisitos funcionais e não funcionais, restrições e critérios de aceitação (seção 2).
+2. Modelar casos de uso, arquitetura, sequência de uma operação e protocolo de aplicação (seção 3).
+3. Implementar a comunicação entre processos com sockets TCP e um agregador com consultas sequenciais e concorrentes (seção 4).
+4. Testar o sistema de forma automatizada (seção 5).
+5. Realizar os cinco experimentos obrigatórios e analisar o impacto da concorrência no desempenho (seções 6 e 7).
 
-### 1.3 Escopo
+### 1.3 Organização
 
-O sistema atende às seis funcionalidades mínimas do enunciado (pesquisa, consulta a pelo menos quatro mercados, apresentação e ordenação dos preços, destaque do menor preço e comparação de desempenho) e às duas evoluções sugeridas: comparação de cestas e identificação do mercado com menor custo total. As bases de produtos e preços são simuladas, como o enunciado permite.
+A seção 2 resume os requisitos (o documento completo está em `docs/requisitos.md`). A seção 3 apresenta a modelagem e o protocolo. A seção 4 descreve a implementação, a seção 5 os testes, a seção 6 os experimentos e a seção 7 discute os resultados. A seção 8 conclui. Os apêndices trazem as instruções de execução e o roteiro da demonstração.
 
 ## 2. Requisitos
 
-O sistema tem dois atores humanos e um ator secundário, 17 requisitos funcionais e 10 não funcionais.
+### 2.1 Problema, objetivo e escopo
 
-### 2.1 Atores
+**Problema.** Para saber onde um produto é mais barato, o consumidor precisa pesquisar em cada supermercado e comparar os preços. Cada supermercado é um sistema independente, com catálogo, preços e tempo de resposta próprios. Um comparador que consulta um supermercado de cada vez faz o usuário esperar a soma dos tempos de todos; como as consultas são independentes, elas podem ser feitas ao mesmo tempo.
 
-| Ator | Descrição |
-| --- | --- |
-| Consumidor | Pesquisa produtos, compara preços e monta cestas de compras na loja. |
-| Avaliador / Operador | Acompanha o painel em tempo real, roda benchmarks, altera latências e tira mercados do ar para observar o comportamento do sistema. |
-| Serviço de mercado (secundário) | Cada um dos cinco processos servidores TCP, que respondem com dados da própria base SQLite. |
+**Objetivo do sistema.** Permitir que o usuário informe um produto e receba, numa única resposta, os preços em pelo menos quatro supermercados independentes, ordenados do menor para o maior e com o menor preço identificado, consultando os supermercados por TCP nos modos sequencial e concorrente e medindo o tempo de cada um.
 
-### 2.2 Requisitos funcionais
+**Escopo.** Cinco supermercados simulados (processos TCP com base SQLite própria), um agregador, um cliente de terminal (TCP) e uma interface web; pesquisa, comparação de preços, menor preço, comparação de cestas (evolução sugerida), medição de tempos, tratamento de falhas e um script com os cinco experimentos. Ficam de fora preços reais, login, pagamento e distribuição em várias máquinas.
+
+### 2.2 Atores
+
+| Ator | Tipo | Descrição |
+| --- | --- | --- |
+| Consumidor | Principal | Pesquisa produtos, compara preços e monta cestas, pelo cliente de terminal ou pela loja web. |
+| Avaliador / Operador | Principal | Compara os modos, roda os experimentos, altera latências e derruba supermercados para observar o sistema. |
+| Serviço de supermercado | Secundário | Cada um dos cinco processos servidores TCP, que respondem com dados da própria base. |
+
+### 2.3 Requisitos funcionais
 
 | ID | Requisito |
 | --- | --- |
-| RF01 | Pesquisar produtos por nome, marca, categoria, tamanho ou palavra-chave, sem diferenciar acentos e maiúsculas. |
-| RF02 | Consultar pelo menos quatro supermercados independentes (o sistema tem cinco). |
-| RF03 | Exibir o preço de cada produto em cada supermercado. |
-| RF04 | Ordenar os resultados por preço: produtos pelo menor preço e ofertas de cada produto do menor para o maior. |
-| RF05 | Destacar o supermercado com o menor preço. |
-| RF06 | Oferecer duas rotas de consulta: sequencial e concorrente. |
-| RF07 | Medir e comparar o tempo das consultas sequenciais e concorrentes. |
-| RF08 | Comparar uma cesta de compras e indicar o mercado com menor custo total. |
-| RF09 | Calcular o custo da cesta comprando cada item no mercado onde ele é mais barato. |
-| RF10 | Exibir em tempo real os eventos de cada conexão TCP (conexão, resposta com tamanho, erro). |
-| RF11 | Exibir a linha do tempo (Gantt) das últimas consultas de cada modo. |
-| RF12 | Executar benchmark com N repetições e calcular média, mínimo, máximo, desvio padrão e speedup. |
-| RF13 | Exportar o histórico de métricas em CSV. |
-| RF14 | Alterar a latência simulada de cada mercado e tirá-lo do ar. |
-| RF15 | Filtrar por categoria, ordenar (destaques, menor preço, maior diferença, nome) e paginar os resultados. |
-| RF16 | Exibir o histórico de preço de um produto em cada mercado. RF17: medir e comparar o consumo de recursos (CPU, threads e memória) dos modos sequencial e concorrente. |
+| RF01 | Permitir que o usuário informe o produto a pesquisar e o modo de consulta. |
+| RF02 | Consultar pelo menos quatro supermercados independentes (são cinco). |
+| RF03 | Permitir consultas sequenciais: um supermercado de cada vez. |
+| RF04 | Permitir consultas concorrentes: todos ao mesmo tempo, uma thread por supermercado. |
+| RF05 | Apresentar o preço de cada produto encontrado em cada supermercado. |
+| RF06 | Ordenar os resultados por preço (produtos pelo menor preço; ofertas de cada produto do mais barato ao mais caro). |
+| RF07 | Identificar o supermercado com o menor preço de cada produto. |
+| RF08 | Registrar o tempo de execução de cada pesquisa, total e por supermercado. |
+| RF09 | Comparar as duas estratégias para a mesma pesquisa, informando o speedup. |
+| RF10 | Informar quais supermercados não responderam e o motivo, sem descartar os resultados dos demais. |
+| RF11 | Comparar uma cesta de compras e identificar o supermercado de menor custo total (evolução sugerida). |
+| RF12 | Permitir alterar a latência simulada e a disponibilidade de cada supermercado durante a execução. |
+| RF13 | Executar os experimentos obrigatórios automaticamente, salvando CSV e gráficos. |
+| RF14 | Exibir em tempo real os eventos de cada conexão TCP (painel web). |
+| RF15 | Exportar o histórico de métricas em CSV. |
+| RF16 | Medir o consumo de CPU e threads de cada modo. |
 
-### 2.3 Requisitos não funcionais
+### 2.4 Requisitos não funcionais
 
 | ID | Requisito | Como é atendido |
 | --- | --- | --- |
-| RNF01 | Comunicação real por sockets TCP entre agregador e mercados. | `socket.create_connection` no cliente; `bind`, `listen` e `accept` no servidor. |
-| RNF02 | Concorrência com multithreading. | `ThreadPoolExecutor` no agregador; uma `threading.Thread` por conexão em cada mercado. |
-| RNF03 | Tolerância a falhas: um mercado lento ou fora do ar não derruba a consulta. | Timeout de 3 s por conexão; falhas viram resultado parcial em vez de exceção. |
-| RNF04 | Independência dos serviços. | Cinco processos, portas 5001 a 5005, um arquivo SQLite por mercado. |
-| RNF05 | Desempenho: busca concorrente perto da maior latência, sequencial perto da soma. | Verificado na seção 8. |
-| RNF06 | Protocolo robusto à fragmentação do TCP. | Framing com prefixo de tamanho, testado com envio em pedaços de 7 bytes. |
-| RNF07 | Interface em português, responsiva e acessível por teclado. | Layout para celular, foco visível, rótulos ARIA. |
-| RNF08 | Dados reprodutíveis. | Geração das bases com semente fixa por mercado. |
-| RNF09 | Testabilidade. | 34 testes automatizados com pytest (seção 7). |
+| RNF01 | A comunicação entre os componentes deverá usar sockets TCP. | Cliente → agregador na porta 5050; agregador → supermercados nas portas 5001–5005. |
+| RNF02 | A estratégia concorrente deverá usar threads. | `ThreadPoolExecutor` com uma thread por supermercado. |
+| RNF03 | Os servidores deverão atender múltiplas conexões simultaneamente. | Agregador e supermercados com uma thread por conexão (`ThreadingTCPServer`). Experimento 4. |
+| RNF04 | O sistema deverá tratar falhas de comunicação. | Timeout de 3 s, até 3 novas tentativas com espera crescente, resultado parcial. Experimento 5. |
+| RNF05 | A aplicação deverá permitir experimentos de desempenho. | Latência configurável em tempo de execução; `experimentos/`. |
+| RNF06 | O protocolo deverá ser documentado e robusto à fragmentação do TCP. | JSON por linha, testado com envio em pedaços de 7 bytes. |
+| RNF07 | Cada supermercado deverá ser um processo independente. | 5 processos, portas e bases próprias. |
+| RNF08 | Com as latências padrão, a pesquisa concorrente deverá levar perto da maior latência e a sequencial perto da soma. | Experimentos 1 e 2. |
+| RNF09 | O sistema deverá ter testes automatizados. | 55 testes `pytest`. |
+| RNF10 | As interfaces deverão estar em português e destacar o menor preço e o tempo gasto. | Terminal com ★ e cores; loja responsiva. |
 
-O requisito RNF10, volume de dados realista, é atendido por um catálogo gerado de 1.740 SKUs (95 tipos de produto, 10 marcas fictícias por categoria, sabores e tamanhos). Cada mercado vende de 78% a 97% dele e guarda 180 dias de preço diário por produto.
+### 2.5 Restrições
 
-## 3. Casos de uso
+- Python 3.12; a comunicação TCP usa só a biblioteca padrão (`socket`, `socketserver`, `threading`, `concurrent.futures`).
+- Comunicação real por sockets: nenhuma consulta é simulada sem rede.
+- Supermercados, marcas, preços e estoques fictícios, gerados com semente fixa.
+- Latência de rede simulada por uma espera configurável (em `localhost` a rede responde em menos de 1 ms).
+- Todos os processos na mesma máquina, em portas distintas; endereços configuráveis por variáveis de ambiente.
+- Trabalho em dupla, apresentação de 15 a 20 minutos em 16/11/2026.
 
-Nove casos de uso cobrem os dois atores humanos; os quatro que buscam preços incluem a consulta TCP aos mercados (UC09).
+### 2.6 Critérios de aceitação
+
+| ID | Critério | Verificação |
+| --- | --- | --- |
+| CA01 | Ao pesquisar "arroz" no cliente de terminal, o usuário recebe os preços dos 5 supermercados numa única resposta. | Demonstração; teste automatizado |
+| CA02 | Produtos e ofertas aparecem do menor para o maior preço, com o mais barato destacado. | Teste automatizado |
+| CA03 | Com as latências padrão, sequencial ≥ 95% da soma das latências; concorrente abaixo da maior latência + 250 ms. | Teste automatizado; Exp. 1 e 2 |
+| CA04 | Toda resposta informa o tempo total e o de cada supermercado. | Formato da resposta |
+| CA05 | Com um supermercado fora do ar (antes ou durante a pesquisa), o usuário recebe os outros 4 com `status: "parcial"` e o motivo. | Testes automatizados; Exp. 5 |
+| CA06 | Oito clientes simultâneos são atendidos, e o tempo total fica próximo ao de um cliente. | Teste automatizado; Exp. 4 |
+| CA07 | Pedidos inválidos recebem erro com código, e a conexão continua utilizável. | Testes automatizados |
+| CA08 | `lsof` mostra o agregador (5050) e os cinco supermercados (5001–5005) escutando, em processos distintos. | Demonstração |
+| CA09 | `python -m experimentos` executa os cinco experimentos e gera tabelas e gráficos sem intervenção. | Execução do script |
+
+Todos os critérios foram verificados (seções 5 e 6).
+
+## 3. Modelagem
+
+### 3.1 Casos de uso
 
 ![Figura 1. Diagrama de casos de uso](figuras/fig-01-casos-de-uso.png)
 
 *Figura 1. Diagrama de casos de uso.*
 
-O consumidor usa a loja (UC01 a UC04) e o avaliador usa o painel (UC03, UC05 a UC08). Os dois escolhem o modo de consulta. Busca, comparação de um produto, cesta e benchmark incluem o UC09, único caso que conversa com o ator secundário, o serviço de mercado.
+O consumidor pesquisa (UC01), compara os preços de um produto (UC02), escolhe o modo (UC03) e monta cestas (UC04), pelo cliente de terminal ou pela loja. O avaliador acompanha as métricas (UC05), compara os modos e roda os experimentos (UC06), exporta métricas (UC07) e configura ou derruba supermercados (UC08). Pesquisa, cesta e comparação incluem o UC09, a consulta TCP aos supermercados, único caso que conversa com o ator secundário.
 
-| Caso | Ator | Fluxo principal | Fluxos alternativos |
-| --- | --- | --- | --- |
-| UC01 Pesquisar produto | Consumidor | Digita o termo (produto, marca ou tamanho); o agregador consulta os mercados (UC09), agrupa as ofertas por produto, ordena por preço, marca o menor e pagina; a loja exibe 40 produtos por página, as categorias com contagem, o tempo e a linha do tempo. | Um mercado não responde: a busca segue com os demais e a loja informa qual faltou. Nenhum produto encontrado: a loja sugere termos mais simples. |
-| UC02 Comparar preços de um produto | Consumidor | Abre um produto; o sistema lista os mercados do menor para o maior preço, com o selo “Menor preço” e a diferença de cada um; abaixo, o histórico de preço dos últimos 90 dias, pedido a cada mercado com o comando HISTORY (UC09). | Mercados sem o produto, sem estoque ou sem resposta aparecem separados. |
-| UC03 Escolher o modo de consulta | Consumidor, Avaliador | Seleciona Sequencial ou Concorrente; as próximas buscas e cestas usam a rota correspondente. | — |
-| UC04 Montar e comparar cesta | Consumidor | Adiciona itens e quantidades e pede a comparação; o sistema mostra o total por mercado, a cesta completa mais barata e o custo comprando cada item onde é mais barato. | Nenhum mercado tem todos os itens: totais parciais com a lista do que falta. |
-| UC05 Acompanhar métricas ao vivo | Avaliador | Abre o painel; recebe por WebSocket cada conexão, resposta e erro, e vê speedup, linha do tempo e histórico atualizados. | Conexão WebSocket cai: o painel reconecta sozinho. |
-| UC06 Rodar benchmark | Avaliador | Define rodadas e termo; o agregador executa a busca nos dois modos alternando a ordem e devolve média, mínimo, máximo, desvio e speedup. | — |
-| UC07 Exportar métricas (CSV) | Avaliador | Baixa o histórico com uma linha por mercado por requisição. | — |
-| UC08 Configurar ou derrubar mercado | Avaliador | Altera a latência ou tira o mercado do ar; o agregador envia `CONFIG` por TCP. | Mercado inacessível: o painel mostra o erro. |
-| UC09 Consultar mercados via TCP | Serviço de mercado | Conecta, envia o comando, espera a resposta, fecha a conexão e publica os eventos com os tempos medidos. | Recusa, fechamento sem resposta ou timeout viram resultado de erro. |
+| Caso | Fluxo principal | Fluxos alternativos |
+| --- | --- | --- |
+| UC01 Pesquisar produto | O consumidor informa o produto; o cliente envia `consultar` ao agregador; o agregador consulta os supermercados (UC09), agrupa as ofertas por produto, ordena por preço e marca o menor; o cliente mostra os preços e os tempos. | Um supermercado não responde: novas tentativas, depois resultado parcial com o motivo. Nenhum responde: erro `NENHUM_MERCADO_RESPONDEU`. Nenhum produto: sugestão de termos mais simples. Pedido inválido: erro `PARAMETRO_INVALIDO`, conexão continua. |
+| UC02 Comparar preços de um produto | Supermercados do menor para o maior preço, mais barato destacado, diferença de cada um. | Sem o produto, sem estoque ou sem resposta: aparecem separados. |
+| UC03 Escolher o modo | `/modo sequencial` no terminal ou alternador na loja; as próximas pesquisas usam esse modo. | — |
+| UC04 Montar e comparar cesta | O agregador envia `BASKET` a cada supermercado e aponta a cesta completa mais barata. | Nenhum tem todos os itens: totais parciais com o que falta. |
+| UC06 Comparar modos / experimentos | A mesma pesquisa nos dois modos, alternando a ordem; média, mínimo, máximo e speedup. | — |
+| UC08 Configurar / derrubar supermercado | O agregador envia `CONFIG` por TCP; o supermercado muda a latência ou passa a fechar as conexões de consulta, inclusive as em andamento. | Processo inacessível: erro `MERCADO_INDISPONIVEL`. |
+| UC09 Consultar supermercados via TCP | Conectar, enviar a linha JSON, esperar a resposta, fechar, publicar eventos com os tempos. | Recusa ou fechamento sem resposta: novas tentativas (0,5 s, 1 s, 2 s). Mais de 3 s sem resposta: timeout. |
 
-## 4. Arquitetura
+### 3.2 Arquitetura
 
-O sistema roda em seis processos: cinco mercados independentes, cada um com sua porta TCP e sua base SQLite, e um agregador que os consulta e atende o navegador.
+O sistema tem os três componentes pedidos: o **cliente**, o **agregador** e os **serviços independentes**. São sete processos: cinco supermercados, o agregador e o cliente.
 
 ![Figura 2. Arquitetura do sistema](figuras/fig-02-arquitetura.png)
 
 *Figura 2. Arquitetura do sistema.*
 
-A requisição do navegador chega às rotas HTTP, que escolhem a estratégia de consulta. O cliente TCP faz uma conexão por mercado e publica cada passo no EventBus, que o repassa por WebSocket ao painel e à loja. Ao fim de cada requisição, as rotas registram os tempos no MetricsStore.
-
-### 4.1 Protocolos
-
-| Trecho | Protocolo | Motivo |
+| Trecho | Protocolo | Por quê |
 | --- | --- | --- |
-| Navegador → agregador | HTTP/1.1 com JSON | Rotas simples, testáveis no navegador e na documentação automática do FastAPI. |
-| Agregador → mercados | TCP puro com framing próprio | Exigência do trabalho; expõe o que o HTTP esconde: fronteiras de mensagem, timeouts, conexão recusada. |
-| Agregador → navegador | WebSocket | Envia cada evento no momento em que acontece, sem o navegador precisar perguntar. |
+| Cliente de terminal → agregador (porta 5050) | TCP puro, uma mensagem JSON por linha | Requisito do trabalho; formato sugerido no enunciado. |
+| Navegador → agregador (porta 8000) | HTTP/1.1 com JSON | Interface web; rotas testáveis no navegador. |
+| Agregador → supermercados (portas 5001–5005) | TCP puro, uma mensagem JSON por linha | Requisito do trabalho; expõe o que o HTTP esconde: fronteiras de mensagem, timeouts, conexão recusada. |
+| Agregador → navegador | WebSocket | Envia cada evento das consultas assim que acontece. |
 
-### 4.2 Processos e threads
+O agregador é um único processo com as duas portas. O servidor TCP (porta 5050) e as rotas HTTP chamam as mesmas estratégias de consulta e compartilham o histórico de métricas e os eventos: uma pesquisa feita no terminal aparece ao vivo no painel web.
 
-- **Mercados.** A thread principal de cada processo fica em `accept()`; cada conexão aceita ganha uma thread própria. Assim um mercado atende várias consultas ao mesmo tempo, por exemplo duas abas buscando juntas.
-- **Agregador, modo sequencial.** A própria thread que atende a requisição HTTP faz as cinco consultas, uma após a outra: 1 thread.
-- **Agregador, modo concorrente.** A requisição cria um `ThreadPoolExecutor` com cinco workers, um por mercado, e recolhe as respostas na ordem em que chegam: 5 threads.
-- **Eventos.** As consultas rodam em threads comuns, mas os WebSockets vivem no event loop do asyncio. O EventBus entrega cada evento com `loop.call_soon_threadsafe`, a forma segura de falar com o event loop a partir de outra thread.
-- **Rotas síncronas.** As rotas de consulta são funções comuns (`def`), que o FastAPI executa num pool de threads; a espera pelos sockets não trava o event loop que atende os WebSockets.
+**Processos e threads.**
 
-### 4.3 Decisões de projeto
+- **Supermercado:** a thread principal fica em `accept()`; cada conexão aceita ganha uma thread, que lê a pergunta, consulta o SQLite e responde.
+- **Agregador, lado dos clientes:** uma thread só faz `accept()` na porta 5050; cada cliente conectado ganha uma thread, que atende os pedidos dele um de cada vez até ele encerrar. As rotas HTTP rodam no pool de threads do FastAPI.
+- **Agregador, modo sequencial:** a própria thread do cliente faz as cinco consultas, uma após a outra (1 thread).
+- **Agregador, modo concorrente:** a thread do cliente cria um `ThreadPoolExecutor` com cinco workers, um por supermercado (1 + 5 threads).
+- **Eventos:** as consultas rodam em threads comuns, mas os WebSockets vivem no event loop do asyncio; o EventBus entrega cada evento com `loop.call_soon_threadsafe`.
 
-- **Latência simulada.** Em `localhost` uma consulta leva menos de 1 ms. Cada mercado espera um tempo configurável antes de responder, imitando um servidor remoto; o valor pode ser alterado em tempo de execução.
-- **Uma conexão por consulta.** Torna explícito o custo do `connect` e evita compartilhar sockets entre threads. O servidor aceita várias mensagens na mesma conexão, o que permite evoluir para um pool de conexões.
-- **Erros como dados.** Falhas viram resultados marcados como erro, nunca exceções, para que a consulta concorrente não perca as respostas boas.
-- **“Fora do ar” sem encerrar o processo.** O mercado fecha as conexões de consulta sem responder, mas continua aceitando os comandos administrativos, para poder voltar pelo painel. Encerrar o processo de verdade produz “conexão recusada”.
-- **Métricas em memória.** Suficiente para a demonstração; a exportação em CSV preserva os dados.
+### 3.3 Diagrama de sequência
 
-## 5. Protocolo de comunicação TCP
+A Figura 3 mostra a operação principal: uma pesquisa concorrente feita pelo cliente de terminal, com um supermercado fora do ar.
 
-Agregador e mercados trocam objetos JSON precedidos por 4 bytes que informam o tamanho da mensagem.
+![Figura 3. Sequência de uma pesquisa concorrente](figuras/fig-12-sequencia.png)
 
-### 5.1 Framing
+*Figura 3. Sequência de uma pesquisa concorrente, do cliente aos supermercados e de volta.*
 
-O TCP entrega um fluxo contínuo de bytes e não preserva as fronteiras entre mensagens: um envio de 500 bytes pode chegar em duas leituras de 250, e duas mensagens seguidas podem chegar juntas numa única leitura. Por isso cada mensagem é enviada como um frame:
+O cliente abre uma conexão TCP com o agregador e envia o pedido. A thread do agregador que atende esse cliente cria cinco threads de consulta; cada uma abre sua conexão com um supermercado e envia `SEARCH`. As respostas chegam em tempos diferentes. O Mercadinho Ipê, fora do ar, fecha a conexão sem responder; a thread dele tenta de novo três vezes e desiste. Com os cinco resultados (quatro bons e um erro), o agregador agrupa, ordena, marca o menor preço e responde ao cliente com `status: "parcial"`. No fim da sessão, o cliente envia `encerrar` e o agregador fecha a conexão.
 
-| Campo | Tamanho | Conteúdo |
+### 3.4 Protocolo de aplicação
+
+O protocolo completo, com exemplos de cada operação, está em `docs/protocolo.md`.
+
+**Enquadramento.** O TCP entrega um fluxo de bytes e não preserva as fronteiras entre mensagens: um envio pode chegar em várias leituras, e duas mensagens podem chegar juntas. Por isso cada mensagem é um objeto JSON em UTF-8 numa linha, terminada por `\n`. Como o JSON nunca tem quebra de linha crua, a linha delimita a mensagem. Os dois lados usam o socket como arquivo (`sock.makefile`), e `readline()` junta os pedaços até achar o `\n`. Linhas acima de 16 MB são rejeitadas.
+
+**Cliente ↔ agregador.** Toda requisição tem `operacao` (e um `id` opcional, devolvido na resposta); toda resposta tem `status` (`sucesso`, `parcial` ou `erro`).
+
+| Operação | Parâmetros | Resposta |
 | --- | --- | --- |
-| Cabeçalho | 4 bytes | Tamanho N do corpo, inteiro sem sinal em ordem de rede (big-endian) |
-| Corpo | N bytes | Objeto JSON codificado em UTF-8 |
-
-O receptor lê exatamente 4 bytes, depois exatamente N bytes, repetindo `recv()` até completar cada parte. Mensagens acima de 8 MiB são rejeitadas, para que um cabeçalho corrompido não provoque uma alocação enorme. Se a conexão fecha antes do primeiro byte, a leitura indica fim normal; se fecha no meio de um frame, é um erro de protocolo.
-
-Exemplo: `{"cmd":"PING"}` tem 14 bytes, então o frame começa com `00 00 00 0E`.
-
-### 5.2 Comandos
-
-Toda requisição tem o campo `cmd`. Toda resposta tem `ok`, acompanhado de `data` em caso de sucesso ou de `error` em caso de falha.
-
-| Comando | Parâmetros | Resposta |
-| --- | --- | --- |
-| `SEARCH` | `q`: termo de busca (vazio = sortimento inteiro) | Itens que contêm todas as palavras (nome, marca, categoria, tamanho), ordenados por preço, com estoque |
-| `BASKET` | `items`: lista de `slug` e `qty` | Linhas com subtotal, itens ausentes e total da cesta |
-| `HISTORY` | `slug` e `days` (até 365) | Preço diário do produto, lido da tabela `price_history` |
-| `PING` | nenhum | Estado do mercado; recusado quando o mercado está fora do ar |
-| `STATUS` | nenhum | Igual ao `PING`, mas responde mesmo fora do ar; inclui o tamanho do banco |
-| `CONFIG` | `latency_ms` e/ou `online` | Novo estado do mercado |
-
-Exemplo de troca:
+| `consultar` | `produto`, `modo` (`sequencial`/`concorrente`), `limite` | `resultados` (produtos com `menor_preco` e `ofertas` de cada `fonte`, ordenados), `tempo_total_ms`, `mercados` (tempo, tentativas e erro de cada um) |
+| `comparar` | `produto`, `repeticoes` | tempo médio, mínimo e máximo de cada modo e `speedup` |
+| `cesta` | `itens` (`produto`, `quantidade`), `modo` | total em cada supermercado e `mais_barato` |
+| `mercados` | — | situação de cada supermercado e clientes conectados |
+| `configurar` | `mercado`, `latencia_ms`, `online` | nova configuração do supermercado |
+| `encerrar` | — | confirmação; o agregador fecha a conexão |
 
 ```json
-→ {"cmd": "SEARCH", "q": "feijão"}
-← {"ok": true, "data": {"market": {"id": "aurora", "name": "Mercado Aurora"},
-    "items": [{"slug": "feijao-carioca-1kg", "name": "Feijão Carioca", "unit": "1 kg",
-               "price": 9.29, "stock": 81}, ...]}}
+→ {"operacao": "consultar", "produto": "arroz branco 5 kg", "modo": "concorrente"}
+← {"operacao": "consultar", "status": "sucesso", "produto": "arroz branco 5 kg", "tempo_total_ms": 1072.4,
+   "resultados": [{"produto": "Arroz Branco Tipo 1", "marca": "Sabor da Terra", "unidade": "5 kg",
+                   "menor_preco": {"fonte": "Mercado Aurora", "preco": 20.19},
+                   "ofertas": [{"fonte": "Mercado Aurora", "produto": "Arroz Branco Tipo 1 Sabor da Terra 5 kg",
+                                "preco": 20.19, "status": "sucesso"}, ...]}, ...],
+   "mercados": [{"fonte": "Mercado Aurora", "status": "sucesso", "tempo_ms": 350.8, "tentativas": 1, "erro": null}, ...]}
 ```
 
-### 5.3 Ciclo de uma consulta e tratamento de falhas
+**Agregador ↔ supermercados.** Comandos curtos: `SEARCH` (busca), `BASKET` (cesta), `STATUS` e `CONFIG` (administração, respondem mesmo fora do ar). Toda resposta tem `ok`, com `data` ou `error`, e `cpu_ms`. Uma conexão por consulta: o agregador conecta, envia, lê a resposta e fecha.
 
-Para cada mercado, o agregador abre uma conexão (`connect`), envia o frame, espera a resposta e fecha a conexão. Mede três tempos: conexão, envio e espera pela resposta. Qualquer falha é convertida em um resultado marcado como erro, e a consulta segue com os demais mercados.
+**Tratamento de erros.** Um pedido inválido recebe `status: "erro"` com um código: `MENSAGEM_INVALIDA` (JSON quebrado), `OPERACAO_DESCONHECIDA`, `PARAMETRO_INVALIDO`, `MERCADO_DESCONHECIDO`, `MERCADO_INDISPONIVEL`, `NENHUM_MERCADO_RESPONDEU`, `TEMPO_ESGOTADO` (cliente inativo) e `ERRO_INTERNO`. Exceto JSON truncado e inatividade, a conexão continua utilizável. Falhas de um supermercado não são erros do pedido: viram `status: "parcial"` com o motivo em `mercados[].erro`.
 
-| Situação | O que o cliente observa | Mensagem registrada |
+| Falha de um supermercado | O que o agregador vê | O que faz |
 | --- | --- | --- |
-| Processo do mercado parado | Conexão recusada no `connect` | conexão recusada (processo do mercado não está rodando) |
-| Mercado fora do ar | Conexão aceita e fechada sem resposta | o mercado encerrou a conexão sem responder |
-| Latência acima de 3 s | Timeout na leitura | tempo esgotado (3,0 s) |
-| Frame inválido | Erro de protocolo | texto do erro |
+| Fora do ar (antes ou durante a consulta) | conexão fechada sem resposta | tenta de novo após 0,5 s, 1 s e 2 s; depois "fora do ar (4 tentativas)" |
+| Processo parado | conexão recusada | o mesmo: "conexão recusada (4 tentativas)" |
+| Mais de 3 s sem resposta | timeout na leitura | desiste na hora: "tempo esgotado (3,0 s)" |
+| Resposta malformada | erro de protocolo | desiste na hora |
 
-O cliente também registra o tamanho de cada frame recebido. Somando os cinco mercados, uma busca por “arroz grao nobre” traz 5 KB, uma por “arroz” traz 44 KB (217 ofertas) e o catálogo inteiro traz 1,5 MB (7.692 ofertas).
+**Encerramento das conexões.** O cliente encerra enviando `encerrar`; o agregador confirma e fecha o socket. Se o cliente some sem avisar, o `readline()` do agregador recebe fim de arquivo e a thread do cliente termina; se a conexão cai no meio de uma linha, o pedaço é descartado. Depois de 5 minutos sem mensagens, o agregador envia `TEMPO_ESGOTADO` e fecha. Do agregador para os supermercados, cada conexão é fechada logo após a resposta (ou no timeout).
 
-## 6. Implementação
+## 4. Implementação
 
-A diferença entre os dois modos de consulta cabe em poucas linhas: um laço `for` no sequencial e um `ThreadPoolExecutor` no concorrente.
+A diferença entre os dois modos de consulta cabe em poucas linhas: uma compreensão de lista no sequencial e um `ThreadPoolExecutor` no concorrente.
 
-### 6.1 Tecnologias
+### 4.1 Tecnologias
 
 | Camada | Tecnologia | Responsabilidade |
 | --- | --- | --- |
-| Mercados | Python 3.12, `socket`, `threading`, SQLite | Servidor TCP de cada supermercado e sua base de dados |
-| Agregador | Python 3.12, FastAPI, Uvicorn | Rotas HTTP, consultas TCP, eventos e métricas |
-| Concorrência | `concurrent.futures.ThreadPoolExecutor` | Uma thread por mercado no modo concorrente |
-| Tempo real | WebSocket | Envio dos eventos de cada conexão ao painel |
-| Interface | React, TypeScript, Tailwind CSS, Recharts | Loja, cesta e painel de métricas |
-| Testes | pytest, httpx | Testes de protocolo, servidor, estratégias e API |
+| Supermercados | Python 3.12, `socketserver`, `threading`, SQLite | Servidor TCP de cada supermercado e sua base |
+| Agregador | Python 3.12, `socketserver`, FastAPI, Uvicorn | Servidor TCP dos clientes, rotas HTTP, consultas, eventos e métricas |
+| Concorrência | `concurrent.futures.ThreadPoolExecutor` | Uma thread por supermercado no modo concorrente |
+| Cliente | Python 3.12, `socket` | Cliente de terminal e experimentos |
+| Interface web | React, TypeScript, Tailwind CSS | Loja, cesta e painel |
+| Experimentos | matplotlib | Gráficos |
+| Testes | pytest, httpx | Protocolo, servidores, estratégias, API e cliente TCP |
 
-### 6.2 Estratégias de consulta
+O código do backend está organizado pelos três componentes do enunciado, mais uma pasta com o que eles compartilham:
 
-As duas funções recebem a mesma lista de mercados e o mesmo comando; só muda a forma de disparar as consultas.
+| Pasta | Componente | Arquivos principais |
+| --- | --- | --- |
+| `comum/` | compartilhado | `config.py` (portas, latências, timeout, retry); `protocolo.py` (`send`/`receive`: uma mensagem JSON por linha) |
+| `cliente/` | ① Cliente | `conexao.py` (socket TCP com o agregador); `terminal.py` (interface) |
+| `agregador/` | ② Agregador | `servidor_tcp.py` (recebe os clientes); `estrategias.py` (sequencial e concorrente); `consulta_mercado.py` (uma consulta TCP, com timeout e retry); `agregador.py` (executa e mede); `consolidacao.py` (ordena, menor preço, cesta); `eventos.py`, `metricas.py`; `api_web.py` (HTTP e WebSocket da interface web) |
+| `mercados/` | ③ Serviços independentes | `servidor.py` (servidor TCP de um supermercado); `banco.py`; `catalogo.py`; `gerar_bancos.py` |
+| `experimentos/` | — | `executar.py` (os cinco experimentos) |
+| `tests/` | — | um arquivo de testes por parte |
+
+`iniciar.py` sobe os cinco supermercados e o agregador. Uma pesquisa percorre, nesta ordem: `cliente/terminal.py` → `cliente/conexao.py` → `agregador/servidor_tcp.py` → `agregador/agregador.py` → `agregador/estrategias.py` → `agregador/consulta_mercado.py` → `mercados/servidor.py`, e volta por `agregador/consolidacao.py`.
+
+### 4.2 Estratégias de consulta
+
+As duas funções recebem a mesma lista de supermercados e o mesmo comando; só muda a forma de disparar as consultas.
 
 ```python
 def sequential(markets, payload, emit=None, t0=None):
-    results = []
-    for market in markets:  # um de cada vez
-        results.append(query_market(market, payload, t0=t0, emit=emit))
-    return results
+    return [query_market(m, payload, t0=t0, emit=emit) for m in markets]  # um de cada vez
 
 def concurrent(markets, payload, emit=None, t0=None):
-    results = []
-    with ThreadPoolExecutor(max_workers=len(markets)) as pool:
-        futures = [pool.submit(query_market, m, payload, t0=t0, emit=emit) for m in markets]
-        for future in as_completed(futures):  # na ordem em que terminam
-            results.append(future.result())
-    return results
+    with ThreadPoolExecutor(max_workers=len(markets), thread_name_prefix="consulta") as pool:  # uma thread por mercado
+        return list(pool.map(lambda m: query_market(m, payload, t0=t0, emit=emit), markets))
 ```
 
-A função `query_market` nunca lança exceção: timeout, conexão recusada e mercado fora do ar viram um resultado com `ok = False`. Assim, uma falha num mercado não descarta as respostas dos outros.
+`query_market` nunca lança exceção: timeout, conexão recusada e supermercado fora do ar viram um resultado com `ok = False` e o motivo. Assim, uma falha num supermercado não descarta as respostas dos outros.
 
-### 6.3 Servidor de mercado
+### 4.3 Servidor de supermercado
 
-Cada mercado é um processo separado que cria um socket, faz `bind` e `listen` na sua porta e fica em `accept()`. Cada conexão aceita ganha uma `threading.Thread`, que lê os frames, consulta o SQLite e responde. A conexão com o banco é aberta por requisição, porque um objeto de conexão SQLite não pode ser compartilhado entre threads.
+Cada supermercado é um processo que usa `socketserver.ThreadingTCPServer`: o servidor faz `bind`, `listen` e `accept` na sua porta, e cada conexão ganha uma thread. A conexão SQLite é aberta por requisição, porque um objeto de conexão não pode ser compartilhado entre threads.
 
-Antes de responder a `SEARCH` e `BASKET`, o mercado espera uma latência simulada, com variação de ±15%. Sem ela, todas as consultas em `localhost` levariam menos de 1 ms e a diferença entre os modos desapareceria no ruído. As latências iniciais são:
+Antes de responder a `SEARCH` e `BASKET`, o supermercado espera a latência configurada, com variação de ±15%. A espera é feita num `threading.Event` e não num `sleep`: quando o supermercado é tirado do ar, o evento é sinalizado, as consultas que estavam esperando acordam na hora e a conexão é fechada sem resposta, como num servidor que trava de verdade. É isso que permite o Experimento 5 desativar um serviço **durante** a pesquisa.
 
-| Mercado | Porta | Latência | Produtos | Preços históricos | Banco |
-| --- | --- | --- | --- | --- | --- |
-| Mercado Aurora | 5001 | 300 ms | 1.690 | 304.200 | 18,1 MB |
-| SuperVila | 5002 | 500 ms | 1.621 | 291.780 | 17,3 MB |
-| Empório Sol | 5003 | 700 ms | 1.488 | 267.840 | 15,9 MB |
-| Max Atacarejo | 5004 | 900 ms | 1.541 | 277.380 | 16,5 MB |
-| Mercadinho Ipê | 5005 | 1200 ms | 1.352 | 243.360 | 14,4 MB |
-
-### 6.4 Bases de dados simuladas
-
-Os cinco bancos somam 7.692 produtos, 1,38 milhão de registros de preço e 82 MB, gerados em cerca de 4 s por `seed.py`. O catálogo comum combina 95 tipos de produto (arroz, café, ração, shampoo…) com 10 marcas fictícias por categoria, sabores e tamanhos, num total de 1.740 SKUs em 11 categorias. Cada mercado vende parte desse catálogo (de 78% no Mercadinho Ipê a 97% no Mercado Aurora) e aplica sobre o preço da marca seu perfil de loja (o atacarejo é 12% mais barato, o empório 10% mais caro) e uma variação de ±12%. Cada produto tem estoque, código de barras EAN-13 fictício e 180 dias de preço diário, gerado como um passeio aleatório que termina no preço atual. O gerador usa semente fixa, então os dados são sempre os mesmos.
-
-### 6.5 Interface
-
-A loja exibe 40 produtos por página, com foto real do tipo de produto (Open Food Facts e bases irmãs), marca, tamanho e o menor preço em destaque. Categorias com contagem, ordenação e paginação são calculadas pelo agregador, e cada mudança consulta os cinco mercados de novo. Um alternador no topo escolhe o modo de consulta, e uma faixa abaixo da busca mostra o tempo total, os bytes recebidos e uma barra por mercado, desenhada ao vivo conforme as respostas chegam. Ao abrir um produto, os mercados aparecem do menor para o maior preço, com o selo “Menor preço”, seguidos do histórico de preço dos últimos 90 dias em cada mercado. A cesta mostra o total em cada mercado, a cesta completa mais barata e o custo comprando cada item onde ele é mais barato.
-
-O painel em tempo real mostra o speedup médio, a linha do tempo das últimas consultas de cada modo, o histórico de tempos, a latência média por mercado, os controles de latência e disponibilidade de cada mercado, o consumo de recursos de cada modo (CPU do agregador e dos mercados, ocupação da CPU, threads extras e memória de cada processo), o benchmark e um feed das requisições ao vivo, com a linha do tempo das cinco conexões em cada cartão e os eventos TCP sob demanda. O histórico de métricas pode ser exportado em CSV.
-
-## 7. Testes
-
-Os 34 testes automatizados passaram em 16,9 s (`pytest`), e o fluxo completo foi verificado manualmente no navegador.
-
-### 7.1 Estratégia
-
-Os testes automatizados sobem os cinco mercados em threads, em portas livres, com bancos temporários completos (gerados uma vez por execução, com 14 dias de histórico para ficar rápido) e latências reduzidas (100 a 300 ms, sem variação aleatória). Assim a suíte é rápida, não depende de processos já rodando e usa conexões TCP reais. Os testes de API usam o `TestClient` do FastAPI apontado para esses mercados.
-
-### 7.2 Testes automatizados
-
-| ID | Caso de teste | Entrada | Resultado esperado | Obtido |
+| Supermercado | Porta | Latência | Produtos | Perfil de preço |
 | --- | --- | --- | --- | --- |
-| T01 | Ida e volta de uma mensagem | Objeto com “feijão açúcar” por um par de sockets | Objeto idêntico, acentos preservados | Passou |
-| T02 | Prefixo de tamanho | Frame de `{"a": 1}` | Cabeçalho igual ao tamanho do corpo | Passou |
-| T03 | Mensagem fragmentada | Frame enviado em pedaços de 7 bytes | Mensagem remontada corretamente | Passou |
-| T04 | Duas mensagens grudadas | Dois frames num único envio | Duas leituras, uma mensagem cada | Passou |
-| T05 | Fechamento limpo | Conexão fechada sem dados | Leitura devolve “fim” sem erro | Passou |
-| T06 | Fechamento no meio do frame | Cabeçalho de 100 bytes e corpo incompleto | Erro de protocolo | Passou |
-| T07 | Tamanho absurdo | Cabeçalho anunciando 2 GiB | Erro de protocolo, sem alocação | Passou |
-| T08 | Busca ordenada | `SEARCH` “arroz” | Apenas arroz, preços crescentes | Passou |
-| T09 | Busca sem acento | “Feijão” e “feijao” | Mesmos resultados, pelo menos 20 itens | Passou |
-| T10 | Busca por marca e tamanho | “arroz grao nobre 5 kg” | Só itens da marca Grão Nobre, 5 kg | Passou |
-| T11 | Sortimento inteiro | `SEARCH` com termo vazio | Todos os produtos do banco (mais de 1.000) | Passou |
-| T12 | Total da cesta | 2 unidades de um arroz + 1 produto inexistente | Total = 2 × preço; inexistente em `missing` | Passou |
-| T13 | Histórico de preço | `HISTORY` de um café, 7 dias | 7 dias em ordem; o último igual ao preço atual | Passou |
-| T14 | Comando desconhecido | `DANCE` | `ok = false` com mensagem de erro | Passou |
-| T15 | Mercado fora do ar | `CONFIG online=false`, depois `SEARCH` e `STATUS` | Busca sem resposta; `STATUS` responde | Passou |
-| T16 | Preços independentes | “arroz branco” nos 5 mercados | Pelo menos dois preços diferentes | Passou |
-| T17 | Concorrente mais rápido | Mesma busca nos dois modos | Sequencial ≥ soma das latências; concorrente < maior + 250 ms e < metade do sequencial | Passou |
-| T18 | Sequencial sem sobreposição | Busca sequencial | Cada consulta começa depois do fim da anterior | Passou |
-| T19 | Concorrente sobreposto | Busca concorrente | Consultas sobrepostas, 5 threads distintas | Passou |
-| T20 | Tolerância a mercado fora do ar | Um mercado offline, busca concorrente | 4 respostas boas, 1 erro | Passou |
-| T21 | Processo parado | Porta sem servidor | Erro “conexão recusada” | Passou |
-| T22 | Timeout | Latência 1500 ms, timeout 0,5 s | Erro “tempo esgotado” em menos de 1 s | Passou |
-| T23 | Bytes recebidos | Busca específica e catálogo inteiro | Tamanho medido e maior no catálogo | Passou |
-| T24 | Eventos emitidos | Busca concorrente | 5 eventos de conexão e 5 de resposta | Passou |
-| T25–T26 | Rota de busca, nos dois modos | `GET /api/search/{modo}?q=arroz` | 5 mercados; ofertas e produtos ordenados; menor preço correto | Passou |
-| T27 | Modo inválido | `GET /api/search/paralelo` | HTTP 422 | Passou |
-| T28 | Paginação e categorias | Catálogo inteiro, páginas 1 e 2, filtro Bebidas | Páginas sem repetição; contagens batem com o total e com o filtro | Passou |
-| T29 | Rota de histórico | `GET /api/history/{slug}?days=7` | 5 mercados, séries de 7 dias | Passou |
-| T30 | Cesta mais barata | Dois arrozes com maior diferença de preço | Mercado mais barato entre os completos; combinação ≤ cesta mais barata | Passou |
-| T31 | Configuração e métricas | Mercado offline, busca, histórico e CSV | 1 erro registrado; CSV com 5 linhas e coluna de bytes | Passou |
-| T32 | Benchmark | 2 rodadas de “cafe” | 2 medidas por modo, speedup > 2 | Passou |
-| T33 | WebSocket | Busca com o painel conectado | `request_start`, 5 respostas, `request_end` | Passou |
+| Mercado Aurora | 5001 | 300 ms | 1.689 | referência |
+| SuperVila | 5002 | 500 ms | 1.639 | 3% mais barato |
+| Empório Sol | 5003 | 700 ms | 1.489 | 10% mais caro |
+| Max Atacarejo | 5004 | 900 ms | 1.544 | 12% mais barato |
+| Mercadinho Ipê | 5005 | 1200 ms | 1.369 | 4% mais caro |
 
-O teste T34 confere a medição de recursos: numa busca por “arroz”, o modo concorrente registra pelo menos 5 threads extras, o sequencial no máximo 1, e a CPU de cada mercado, a CPU do agregador e a memória são medidas.
+As bases são geradas por `mercados/gerar_bancos.py` a partir de um catálogo de 1.740 itens (95 tipos de produto, marcas fictícias, sabores e tamanhos). Cada supermercado vende parte do catálogo, aplica seu perfil de preço e uma variação de ±12%; somadas, as bases têm 7.730 produtos. O gerador usa semente fixa, então os dados são sempre os mesmos.
 
-### 7.3 Testes de sistema (manuais)
+### 4.4 Agregador TCP e cliente de terminal
 
-Com os seis processos rodando, foram verificados no navegador: busca nos dois modos com a linha do tempo desenhada ao vivo; ordenação e selo de menor preço; cesta com três itens; benchmark de 3 rodadas; retirada de um mercado do ar, com a loja informando “4 de 5 mercados responderam”; arraste do controle de latência até 3,65 s, com o valor mantido após a resposta e o poll seguinte; paginação do catálogo inteiro e histórico de preço no detalhe do produto; e layout em tela de celular (375 px), sem rolagem horizontal. O comando `lsof -iTCP:5001-5005 -sTCP:LISTEN` confirmou cinco processos Python escutando em portas TCP.
+O servidor TCP do agregador (`agregador/servidor_tcp.py`) também é um `ThreadingTCPServer`. A thread de cada cliente lê uma linha, valida os parâmetros, chama a operação e responde, em laço, até o cliente enviar `encerrar` ou fechar o socket. Parâmetros inválidos levantam um `RequestError` com o código, que vira a resposta de erro; uma exceção inesperada vira `ERRO_INTERNO` sem derrubar a thread.
 
-## 8. Experimentos e resultados
+O cliente de terminal (`cliente/terminal.py`, que usa `cliente/conexao.py`) abre uma conexão no início da sessão e a mantém. Cada linha digitada vira uma pesquisa; comandos como `/modo`, `/comparar`, `/cesta`, `/derrubar` e `/json` chamam as demais operações. A saída mostra o tempo de cada supermercado, os produtos do mais barato para o mais caro e uma ★ no menor preço:
 
-Com as latências padrão, a consulta concorrente foi 3,1× mais rápida que a sequencial (1,22 s contra 3,74 s, média de 10 rodadas); com cinco mercados de latência igual, o ganho chegou a 4,7×.
+```
+concorrente> arroz branco 5 kg
 
-### 8.1 Metodologia
+  'arroz branco 5 kg' · modo concorrente · 1,07 s · 5/5 mercados responderam
+    Mercado Aurora  ✔   351 ms
+    SuperVila       ✔   522 ms
+    Empório Sol     ✔   800 ms
+    Max Atacarejo   ✔   845 ms
+    Mercadinho Ipê  ✔   1,07 s
 
-- **Ambiente:** macOS em Apple Silicon, Python 3.12, todos os processos em `127.0.0.1`, timeout do cliente de 3 s. Bancos com 1.352 a 1.690 produtos por mercado; a busca “arroz” devolve 217 ofertas (44 KB) somando os cinco.
-- **Medição:** o agregador mede cada requisição com `time.perf_counter()`, do início da primeira consulta até a última resposta, e registra início e fim de cada conexão.
-- **Latência:** cada mercado espera o tempo configurado com variação aleatória de ±15% antes de responder.
-- **Benchmark:** a mesma busca (“arroz”) roda nos dois modos, alternando a ordem a cada rodada para que nenhum modo seja favorecido por cache ou aquecimento.
+   1. Arroz Branco Tipo 1 · Sabor da Terra · 5 kg
+     ★ Mercado Aurora     R$ 20,19   menor preço
+       Max Atacarejo      R$ 22,49   +R$ 2,30
+       Empório Sol        R$ 23,49   +R$ 3,30
+       SuperVila          R$ 23,99   +R$ 3,80
+       Mercadinho Ipê     R$ 26,59   +R$ 6,40
+```
+
+A classe `ClienteAgregador` é reaproveitada pelos experimentos (`experimentos/executar.py`), de modo que os experimentos passam pelo mesmo caminho que o usuário.
+
+### 4.5 Interface web
+
+A loja exibe os produtos com o menor preço em destaque, um alternador de modo e, abaixo da busca, a linha do tempo das cinco conexões TCP desenhada ao vivo. Ao abrir um produto, os supermercados aparecem do menor para o maior preço. A cesta mostra o total em cada supermercado e a cesta completa mais barata. O painel compara os modos lado a lado, permite deixar cada supermercado lento, em timeout ou fora do ar, mostra os eventos ao vivo (inclusive das pesquisas feitas pelo cliente de terminal) e exporta as métricas em CSV.
+
+## 5. Testes
+
+Os 55 testes automatizados passam (`pytest`). Eles sobem os cinco supermercados em threads, em portas livres, com bancos temporários e latências reduzidas (100 a 300 ms, sem variação), e usam conexões TCP reais.
+
+| Grupo | Testes | O que verificam |
+| --- | --- | --- |
+| Protocolo (`test_protocolo.py`) | 7 | Ida e volta com acentos; uma mensagem por linha; mensagem enviada em pedaços de 7 bytes; duas mensagens grudadas; fechamento limpo; fechamento no meio da linha; JSON inválido |
+| Supermercado (`test_mercados.py`) | 8 | Busca ordenada por preço; sem acento; por marca e tamanho; sortimento inteiro; total da cesta; comando desconhecido; fora do ar com `STATUS` respondendo; preços diferentes entre supermercados |
+| Estratégias (`test_estrategias.py`) | 10 | Concorrente mais rápido; sequencial sem sobreposição; concorrente sobreposto em 5 threads; retry e desistência; sucesso quando o supermercado volta; esperas crescentes; conexão recusada; timeout sem retry; bytes medidos; eventos |
+| API HTTP (`test_api_web.py`) | 10 | Busca nos dois modos; modo inválido; paginação; cesta; configuração e CSV; benchmark; WebSocket; recursos; situação dos supermercados |
+| Cliente ↔ agregador TCP (`test_servidor_tcp.py`) | 20 | `consultar` nos dois modos (ordenação, menor preço, formato `fonte`/`produto`/`preco`/`status`); concorrente mais rápido por TCP; `comparar`; várias operações na mesma conexão e `encerrar`; 8 pedidos inválidos com o código certo; JSON inválido sem perder a conexão; `cesta`; supermercado fora do ar (`parcial`); todos fora do ar (`NENHUM_MERCADO_RESPONDEU`); supermercado caindo durante a pesquisa; 8 clientes simultâneos; desconexão abrupta |
+
+Além dos testes automatizados, o sistema foi verificado com os sete processos no ar: pesquisas pelo cliente de terminal nos dois modos, cesta, `/derrubar` e `/religar`, três clientes conectados ao mesmo tempo, as pesquisas do terminal aparecendo no painel web e `lsof -nP -iTCP -sTCP:LISTEN` mostrando as portas 5050 e 5001–5005.
+
+## 6. Experimentos
+
+### 6.1 Metodologia
+
+- **Ambiente:** Apple M1 (8 núcleos), macOS, Python 3.12, todos os processos em `127.0.0.1`. Medições de 14/11/2026.
+- **Caminho medido:** `python -m experimentos` faz tudo pelo cliente TCP: cliente → agregador → supermercados. Latência e disponibilidade são alteradas com a operação `configurar`.
+- **Pesquisa:** "arroz", que devolve 217 ofertas (cerca de 44 KB) somando os cinco supermercados.
+- **Medição:** o agregador mede cada pesquisa com `time.perf_counter()`, do início da primeira consulta até a última resposta. O cliente também mede o tempo que viu; a diferença ficou abaixo de 10 ms.
+- **Latência:** cada supermercado espera o tempo configurado com variação de ±15%. Latências padrão: 300, 500, 700, 900 e 1200 ms.
+- **Ordem alternada:** a ordem dos modos alterna a cada rodada, para que nenhum seja favorecido por cache ou aquecimento.
 - **Modelo esperado:** com latências l₁ … lₙ, o sequencial deve levar cerca de l₁ + … + lₙ e o concorrente cerca de max(l₁ … lₙ).
 
-### 8.2 Uma consulta em detalhe
+Todos os números estão em `docs/relatorio/dados/` (um CSV por experimento) e podem ser refeitos com o script.
 
-![Figura 3. Linha do tempo de uma consulta em cada modo](figuras/fig-03-gantt-consulta.png)
+![Figura 4. Linha do tempo de uma consulta em cada modo](figuras/fig-03-gantt-consulta.png)
 
-*Figura 3. Linha do tempo de uma consulta em cada modo.*
+*Figura 4. Uma pesquisa em detalhe: no sequencial as conexões formam uma escada; no concorrente abrem juntas e o total é decidido pelo supermercado mais lento.*
 
-No sequencial, cada mercado só é consultado depois que o anterior responde, e as barras formam uma escada. No concorrente, as cinco conexões abrem nos primeiros 10 ms e o total é decidido pelo mercado mais lento, o Mercadinho Ipê.
+### 6.2 Experimentos 1 e 2 — consulta sequencial e concorrente
 
-### 8.3 Cenários de latência e falha
+Dez pesquisas em cada modo, latências padrão.
 
-| Cenário | Configuração | Rodadas | O que se quer observar |
-| --- | --- | --- | --- |
-| E1 | Latências padrão: 300, 500, 700, 900 e 1200 ms | 10 | Caso típico, mercados com velocidades diferentes |
-| E2 | Todos os mercados com 800 ms | 5 | Ganho máximo quando as latências são iguais |
-| E3 | Todos os mercados com 0 ms | 20 | Custo real de TCP, SQLite e threads em `localhost` |
-| E4 | Padrão, mas Mercadinho Ipê com 4000 ms | 3 | Mercado lento além do timeout de 3 s |
-| E5 | Padrão, Mercadinho Ipê fora do ar | manual | Tolerância a falha |
-
-![Figura 4. Tempo médio por cenário, comparado ao previsto](figuras/fig-04-cenarios.png)
-
-*Figura 4. Tempo médio por cenário, comparado ao previsto.*
-
-Em todos os cenários, as médias ficaram a menos de 9% do previsto. No E1, o sequencial variou de 3,43 s a 3,97 s (desvio de 150 ms) e o concorrente de 1,03 s a 1,35 s (desvio de 103 ms). No E4, o Mercadinho Ipê esgotou o timeout nas seis consultas e os dois modos devolveram os preços dos outros quatro mercados.
-
-O cenário E3, sem latência, fica fora do gráfico porque está em outra escala: 17,7 ms no sequencial contra 7,4 ms no concorrente, um ganho de 2,4× (ver seção 8.6). No E5, com o Mercadinho Ipê fora do ar, o mercado fechou a conexão em 1,4 ms e a busca concorrente caiu para 911 ms em média (a latência do Max Atacarejo, 900 ms) e a loja exibiu “4 de 5 mercados responderam”.
-
-### 8.4 Efeito do número de mercados
-
-![Figura 5. Tempo pelo número de mercados](figuras/fig-05-por-mercados.png)
-
-*Figura 5. Tempo pelo número de mercados.*
-
-Com um único mercado, os dois modos empatam: não há o que paralelizar. A cada mercado acrescentado, o sequencial soma a latência dele, enquanto o concorrente só cresce porque o novo mercado é mais lento que os anteriores. O speedup sobe de 1,0× para 2,9× e tende a crescer com o número de fontes consultadas.
-
-### 8.5 Efeito do número de threads
-
-![Figura 6. Tempo pelo número de threads do pool](figuras/fig-06-por-threads.png)
-
-*Figura 6. Tempo pelo número de threads do pool.*
-
-O previsto vem de simular o pool: cada consulta, na ordem de envio, vai para a primeira thread livre. Com 2 threads, por exemplo, o Empório Sol começa aos 300 ms, o Max Atacarejo aos 500 ms e o Mercadinho Ipê só aos 1000 ms, terminando em 2,2 s; mediu-se 2,31 s. Com 3 e 4 threads, o medido (1,68 s e 1,55 s) ficou a menos de 50 ms do previsto. Com uma única thread, o modo concorrente vira sequencial. O ganho máximo só aparece com uma thread por mercado.
-
-### 8.6 Volume de dados
-
-Trazer 300 vezes mais dados custou poucos milissegundos: sem latência, o catálogo inteiro (1,5 MB) levou 67 ms no sequencial e 31 ms no concorrente; com as latências padrão, a diferença entre as buscas some na variação.
-
-| Busca | Ofertas | Recebido (5 mercados) | Sem latência: sequencial | Sem latência: concorrente | Latências padrão: sequencial | Latências padrão: concorrente |
+| Experimento | Modo | Média | Mín. | Máx. | Desvio padrão | Previsto |
 | --- | --- | --- | --- | --- | --- | --- |
-| “arroz grao nobre” | 23 | 5 KB | 9,4 ms | 5,1 ms | 3,61 s | 1,20 s |
-| “arroz” | 217 | 44 KB | 18,2 ms | 9,5 ms | 3,81 s | 1,19 s |
-| Catálogo inteiro | 7.692 | 1,53 MB | 66,6 ms | 31,3 ms | 3,77 s | 1,25 s |
+| 1 | Sequencial | 3,71 s | 3,39 s | 3,94 s | 149 ms | 3,60 s (soma) |
+| 2 | Concorrente | 1,16 s | 1,04 s | 1,35 s | 107 ms | 1,20 s (maior) |
 
-Média de 5 buscas por célula (E8). Em `localhost`, a espera simulada pela rede domina; o volume só pesaria numa rede lenta ou com respostas muito maiores.
+![Figura 5. Experimentos 1 e 2](figuras/fig-08-exp1-exp2.png)
 
-### 8.7 Consumo de recursos
+*Figura 5. Tempo de cada rodada nos dois modos, com o previsto pelo modelo.*
 
-A concorrência não reduz o processamento: com espera de rede, os dois modos gastam praticamente a mesma CPU por requisição (78 ms contra 79 ms no catálogo inteiro); o concorrente só a concentra numa janela 3× menor e cria 5 threads extras.
+O speedup médio foi de 3,2×, contra 3,0× do modelo (3,6 s ÷ 1,2 s). O concorrente foi mais rápido em todas as rodadas, sem sobreposição entre as faixas: o pior concorrente (1,35 s) levou menos da metade do melhor sequencial (3,39 s).
 
-![Figura 7. Consumo de CPU por requisição](figuras/fig-07-recursos.png)
+### 6.3 Experimento 3 — simulação de latência
 
-*Figura 7. Consumo de CPU por requisição.*
+Sete configurações de atraso, cinco rodadas cada.
 
-- **Como foi medido (E9).** Cada mercado informa a CPU gasta pela thread que atendeu a consulta (`time.thread_time()`, que não conta o sleep da latência). O agregador mede a CPU do próprio processo durante a requisição com `psutil`, o pico de threads com `threading.active_count()` e a memória residente. Foram 10, 5, 20 e 10 rodadas por cenário, na ordem do gráfico.
-- **Com espera de rede**, a CPU dos mercados é a mesma nos dois modos (19,7 ms contra 19,3 ms na busca “arroz”). A CPU do agregador aparece maior no sequencial (21,6 ms contra 15,6 ms) porque a janela de medição é 3× mais longa e inclui tarefas de fundo, como o WebSocket. A CPU fica ocupada de 1% a 6% do tempo: o resto é espera.
-- **Sem espera de rede**, o concorrente gasta de 20% a 43% mais CPU, pelo custo de criar threads e trocar de contexto, mas ocupa de 2 a 2,8 núcleos ao mesmo tempo, contra menos de um no sequencial. É esse paralelismo, nos cinco processos dos mercados, que dá o ganho de 2,3× mesmo sem latência.
-- **Threads e memória.** O sequencial não cria threads; o concorrente cria uma por mercado (5) a cada requisição. Cada processo de mercado ocupa cerca de 18 MB de memória residente, e o agregador entre 30 e 50 MB.
+| Cenário | Latências | Sequencial | Previsto | Concorrente | Previsto | Speedup |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sem atraso | 0 ms em todos | 13 ms | 0 ms | 8 ms | 0 ms | 1,6× |
+| 200 ms | 200 ms em todos | 1,04 s | 1,00 s | 233 ms | 200 ms | 4,5× |
+| 500 ms | 500 ms em todos | 2,57 s | 2,50 s | 565 ms | 500 ms | 4,6× |
+| 1000 ms | 1000 ms em todos | 4,98 s | 5,00 s | 1,13 s | 1,00 s | 4,4× |
+| Padrão | 300 a 1200 ms | 3,62 s | 3,60 s | 1,15 s | 1,20 s | 3,1× |
+| Um lento | padrão, Ipê com 2500 ms | 5,14 s | 4,90 s | 2,50 s | 2,50 s | 2,1× |
+| Um em timeout | padrão, Ipê com 4000 ms | 5,49 s | 5,40 s | 3,01 s | 3,00 s | 1,8× |
 
-Os tempos sem latência variam entre rodadas (6 a 18 ms na busca “arroz”, comparando E3 e E9) porque dependem da carga do computador; o speedup ficou entre 2,3× e 2,4× nas duas medições.
+![Figura 6. Experimento 3](figuras/fig-09-exp3-latencia.png)
 
-## 9. Discussão
+*Figura 6. Tempo médio por cenário de latência.*
 
-Os resultados confirmam o modelo simples: o tempo sequencial é a soma das latências e o concorrente é a maior delas, de modo que o speedup máximo é a soma dividida pelo máximo.
+Com latências iguais o ganho ficou entre 4,4× e 4,6×, perto do limite teórico de 5×. Com latências diferentes, o ganho é a soma dividida pela maior. Um supermercado lento passa a decidir o tempo do concorrente (2,50 s com o Ipê em 2500 ms), e o timeout de 3 s limita o estrago quando ele não responde. Sem atraso, o ganho cai para 1,6×.
 
-- **Speedup previsível.** Com as latências padrão, 3,6 s ÷ 1,2 s = 3,0; o medido foi 3,1×. Com cinco latências iguais o limite teórico é 5×, e o medido foi 4,7×. A diferença vem da variação de ±15%: o modo concorrente espera o mais lento de cinco sorteios, que tende a ficar acima de 800 ms (871 ms na média).
-- **Concorrência compensa quando se espera E/S.** Sem latência (E3), o ganho ainda foi de 2,4×: sobra o trabalho real de cada mercado (consultar o SQLite e montar o JSON), que os cinco processos fazem em paralelo. Com os bancos pequenos da primeira versão, esse trabalho levava cerca de 1 ms e o ganho era de apenas 1,4×, pois o custo de criar o pool pesava mais. Em Python, uma thread parada em `recv()` libera o GIL e as outras seguem trabalhando; para tarefas de CPU, threads não trariam o mesmo ganho.
-- **Timeouts são indispensáveis.** No E4, sem timeout, um único mercado travado seguraria a resposta inteira. Com timeout de 3 s, o concorrente respondeu em 3,0 s e o sequencial em 5,5 s (soma dos outros quatro mais o timeout). O valor do timeout é um compromisso: curto demais descarta mercados apenas lentos; longo demais atrasa o usuário.
-- **Uma thread por fonte.** Com menos threads que mercados, as consultas excedentes esperam na fila do pool e o tempo volta a crescer (seção 8.5). Para dezenas ou centenas de fontes, um pool fixo e limitado ou um modelo assíncrono (`asyncio`) seria mais adequado que uma thread por fonte.
-- **Tolerância a falhas.** Tratar falhas como dados, e não como exceções, fez com que mercado fora do ar, processo parado e timeout produzissem resultados parciais em vez de erro para o usuário.
+### 6.4 Experimento 4 — múltiplos clientes
 
-### 9.1 Limitações
+De 1 a 32 clientes, cada um com sua conexão TCP, começando juntos; cada cliente faz 3 pesquisas seguidas.
+
+| Clientes | Sequencial: resposta média | Sequencial: vazão | Concorrente: resposta média | Concorrente: vazão |
+| --- | --- | --- | --- | --- |
+| 1 | 3,64 s | 0,27 pesquisas/s | 1,22 s | 0,82 pesquisas/s |
+| 2 | 3,60 s | 0,55 pesquisas/s | 1,23 s | 1,59 pesquisas/s |
+| 4 | 3,65 s | 1,06 pesquisas/s | 1,23 s | 3,16 pesquisas/s |
+| 8 | 3,61 s | 2,12 pesquisas/s | 1,25 s | 6,15 pesquisas/s |
+| 16 | 3,59 s | 4,25 pesquisas/s | 1,22 s | 11,70 pesquisas/s |
+| 32 | 3,66 s | 8,33 pesquisas/s | 1,25 s | 23,66 pesquisas/s |
+
+![Figura 7. Experimento 4](figuras/fig-10-exp4-clientes.png)
+
+*Figura 7. Tempo de resposta e vazão conforme o número de clientes simultâneos.*
+
+O tempo de cada pesquisa não mudou com mais clientes, e a vazão cresceu na proporção dos clientes: 32 clientes fizeram 96 pesquisas concorrentes em 4,06 s, 29 vezes a vazão de um só. Nenhuma pesquisa falhou. Com 32 clientes no modo concorrente, o agregador tinha 32 threads de cliente, cada uma com 5 threads de consulta (160 conexões simultâneas com os supermercados), e cada supermercado atendia 32 consultas ao mesmo tempo, cada uma na sua thread.
+
+### 6.5 Experimento 5 — indisponibilidade de serviço
+
+O Mercadinho Ipê foi desativado (operação `configurar` com `online: false`, por uma segunda conexão TCP) antes da pesquisa, 0,3 s depois do início, ou 0,3 s depois do início e reativado em 1,0 s. Três rodadas por cenário.
+
+| Cenário | Modo | Tempo médio | Supermercados com resposta | Tentativas no Ipê |
+| --- | --- | --- | --- | --- |
+| Todos no ar | Sequencial | 3,59 s | 5 de 5 | 1 |
+| | Concorrente | 1,24 s | 5 de 5 | 1 |
+| Fora do ar antes | Sequencial | 6,00 s | 4 de 5 | 4 |
+| | Concorrente | 3,52 s | 4 de 5 | 4 |
+| Cai durante | Sequencial | 5,97 s | 4 de 5 | 4 |
+| | Concorrente | 3,82 s | 4 de 5 | 4 |
+| Cai e volta | Sequencial | 3,68 s | 5 de 5 | 1 |
+| | Concorrente | 3,04 s | 5 de 5 | 3 |
+
+![Figura 8. Experimento 5](figuras/fig-11-exp5-falha.png)
+
+*Figura 8. O Ipê cai 0,3 s depois do início da pesquisa. Barras: início e fim da consulta a cada supermercado.*
+
+Em todos os cenários o cliente recebeu os preços dos outros quatro, com `status: "parcial"` e o motivo `fora do ar (4 tentativas)`. No concorrente, a consulta ao Ipê já estava em andamento quando ele caiu: a conexão foi fechada na hora e as três novas tentativas levaram a resposta a 0,3 + 0,5 + 1 + 2 = 3,8 s, exatamente o medido. No sequencial, quando a vez do Ipê chegou (aos 2,4 s) ele já estava fora do ar, e a pesquisa somou os 3,5 s das tentativas. No cenário "cai e volta", a terceira tentativa do concorrente encontrou o Ipê de volta e a pesquisa terminou com os cinco supermercados; o sequencial nem percebeu a queda, porque só chegou ao Ipê depois que ele voltou.
+
+Encerrar o processo do supermercado produz conexão recusada, tratada da mesma forma ("conexão recusada (4 tentativas)"), o que é coberto por teste automatizado.
+
+### 6.6 Experimentos complementares
+
+Antes dos obrigatórios foram medidos, pelo painel web, o efeito do número de supermercados, do número de threads do pool e do volume de dados, e o consumo de CPU. Os números completos estão em `docs/experimentos.md`.
+
+![Figura 9. Tempo pelo número de supermercados](figuras/fig-05-por-mercados.png)
+
+*Figura 9. Com um supermercado os modos empatam; o speedup cresce a cada fonte acrescentada (1,0× a 2,9×).*
+
+![Figura 10. Tempo pelo número de threads do pool](figuras/fig-06-por-threads.png)
+
+*Figura 10. Com menos threads que supermercados, as consultas esperam na fila do pool; com uma thread o concorrente vira sequencial.*
+
+![Figura 11. Consumo de CPU por requisição](figuras/fig-07-recursos.png)
+
+*Figura 11. A concorrência não economiza CPU: o mesmo trabalho é feito, mas sobreposto.*
+
+Trazer 300 vezes mais dados (o catálogo inteiro, 1,5 MB) custou poucos milissegundos em `localhost`; com as latências padrão, a diferença sumiu na variação.
+
+## 7. Resultados e discussão
+
+### 7.1 Comparação entre as estratégias
+
+| Aspecto | Sequencial | Concorrente |
+| --- | --- | --- |
+| Tempo de uma pesquisa (padrão) | soma das latências: 3,71 s | maior latência: 1,16 s |
+| Ganho | — | 3,2× no padrão; até 4,6× com latências iguais; 1,6× sem latência |
+| Threads por pesquisa no agregador | 1 | 1 + 5 |
+| Supermercado em timeout | soma dos outros + 3 s: 5,49 s | 3 s: 3,01 s |
+| Supermercado fora do ar | soma dos outros + 3,5 s de retry: 6,00 s | 3,5 s de retry: 3,52 s |
+| 32 clientes simultâneos | 8,3 pesquisas/s | 23,7 pesquisas/s |
+| CPU por pesquisa | a mesma | a mesma, concentrada numa janela menor |
+
+### 7.2 Conclusões sobre multithreading
+
+- **Threads compensam quando a tarefa espera E/S.** Cada consulta passa quase todo o tempo esperando a rede. Uma thread bloqueada em `recv()` libera o GIL do Python, e as outras seguem. Por isso cinco threads reduziram o tempo a cerca de um terço, como o modelo `soma ÷ máximo` previa.
+- **O ganho tem teto: a fonte mais lenta.** Nenhuma quantidade de threads torna a pesquisa mais rápida que o supermercado mais lento (Exp. 3, "Um lento").
+- **Sem espera, o ganho é pequeno.** Sem latência, o speedup cai para 1,6×: criar threads e abrir conexões tem custo fixo, e trabalho de CPU em Python não se paraleliza dentro de um processo, por causa do GIL. O ganho que sobra vem dos cinco processos de supermercado, que trabalham em paralelo de verdade.
+- **A concorrência no servidor é o que permite vários clientes.** Com uma thread por conexão, 32 clientes foram atendidos no mesmo tempo que um (Exp. 4). Os dois níveis se somam: concorrência entre clientes (threads do servidor) e dentro de cada pesquisa (threads de consulta).
+- **Timeouts e retries fazem parte da concorrência.** Sem timeout, um supermercado travado seguraria a resposta para sempre. O retry recupera falhas curtas (Exp. 5, "cai e volta"), mas custa 3,5 s quando a falha persiste. Os valores de timeout e de espera são um compromisso entre não perder supermercados e não fazer o usuário esperar.
+- **Concorrência não economiza trabalho.** A CPU por pesquisa é a mesma nos dois modos; a concorrência troca espera por paralelismo, ao custo de mais threads.
+
+### 7.3 Limitações
 
 - Todos os processos rodam na mesma máquina, e a latência de rede é simulada com uma espera. Não há perda de pacotes, variação real de rota nem limite de banda.
-- Os cenários usaram de 3 a 20 rodadas; mais repetições dariam intervalos de confiança mais estreitos. A CPU e as threads do agregador são medidas no processo inteiro, então requisições simultâneas de outras abas entram na conta; por isso o E9 foi medido sem outras consultas em andamento (0 threads extras no sequencial).
-- Numa primeira rodada, com bancos pequenos, 3 e 4 threads ficaram 120 a 160 ms acima do previsto; refeito com os bancos atuais, o desvio caiu para menos de 50 ms. Com 5 buscas por ponto, diferenças dessa ordem estão dentro da variação esperada.
-- Cada consulta abre uma nova conexão TCP; um pool de conexões reduziria o custo do handshake, que em `localhost` é desprezível mas numa rede real não seria.
+- De 3 a 10 rodadas por cenário; mais repetições dariam intervalos de confiança mais estreitos.
+- No Experimento 4, os 32 clientes são threads de um mesmo processo Python; com espera dominante isso não interfere, mas numa carga de CPU eles disputariam o GIL.
+- Uma thread por cliente e uma por consulta é simples, mas não escala para milhares de conexões; nesse caso, um pool limitado ou `asyncio` seria mais adequado.
 
-## 10. Conclusão
+## 8. Conclusão
 
-O comparador atende a todas as funcionalidades mínimas do Tema 1 e às duas evoluções sugeridas, com comunicação real por sockets TCP entre seis processos. A consulta concorrente com threads reduziu o tempo de resposta a cerca de um terço, como o modelo previa.
+O comparador atende às funcionalidades mínimas do Tema 1 e à evolução sugerida (comparação de cestas), com cliente, agregador e cinco supermercados como processos separados que conversam por sockets TCP, usando um protocolo de aplicação documentado em JSON. O agregador consulta os supermercados de forma sequencial ou concorrente, atende vários clientes ao mesmo tempo, registra o tempo de cada pesquisa e trata lentidão, queda e processo parado sem perder os resultados dos demais.
 
-O trabalho percorreu as etapas pedidas: levantamento de atores e requisitos, casos de uso, modelagem da arquitetura e do protocolo, implementação, 34 testes automatizados e experimentos com análise. Os experimentos mostraram que o ganho da concorrência depende de quanto tempo as consultas passam esperando a rede, de quantas fontes são consultadas e de haver threads suficientes para todas. A concorrência não reduz o processamento: troca espera por paralelismo, ao custo de threads e, quando não há espera de rede, de um pouco mais de CPU.
+O trabalho percorreu as etapas pedidas: análise de requisitos com atores, requisitos funcionais e não funcionais, restrições e critérios de aceitação; diagramas de casos de uso, arquitetura e sequência; implementação; 55 testes automatizados; e os cinco experimentos obrigatórios. A consulta concorrente reduziu o tempo de resposta a cerca de um terço (3,2×), chegando a 4,6× com latências iguais. O ganho depende de quanto tempo as consultas passam esperando a rede, de quantas fontes são consultadas e de haver threads suficientes para todas; a fonte mais lenta é o limite.
 
-### 10.1 Trabalhos futuros
+### 8.1 Trabalhos futuros
 
-- Rodar os mercados em outras máquinas da rede local, com um endereço configurável por mercado, para medir latência real em vez de simulada.
-- Comparar a versão com threads a uma versão com `asyncio`, que atende muitas conexões numa única thread.
-- Manter um pool de conexões TCP abertas para cada mercado, eliminando o handshake a cada consulta.
-- Guardar as métricas em banco, para que o histórico sobreviva a reinicializações do agregador.
+- Rodar os supermercados em outras máquinas da rede, para medir latência real em vez de simulada.
+- Cache das respostas no agregador, para não esperar o supermercado mais lento em pesquisas repetidas.
+- Responder com os supermercados que já responderam após um prazo, completando depois (resposta parcial antecipada).
+- Comparar a versão com threads a uma versão com `asyncio`.
+- Manter um pool de conexões TCP abertas com cada supermercado, eliminando o handshake a cada consulta.
 
 ## Apêndice A. Como executar
 
-Requisitos: Python 3.12 e Node.js 20 ou superior.
+Requisitos: Python 3.12 (e Node.js 20 ou superior, só para a interface web em modo de desenvolvimento).
 
 1. Instalar o backend, uma vez: `cd backend`, `python3.12 -m venv .venv` e `.venv/bin/pip install -r requirements.txt`.
-2. Subir os cinco mercados e o agregador: `cd backend && .venv/bin/python run_all.py`. Na primeira execução, as bases SQLite são geradas (cerca de 4 s, 82 MB); para gerá-las de novo, \`.venv/bin/python -m markets.seed\`.
-3. Subir a interface, em outro terminal: `cd frontend && npm install && npm run dev`, e abrir `http://localhost:5173`.
-4. Rodar os testes: `cd backend && .venv/bin/python -m pytest`.
-5. Conferir os processos TCP: `lsof -nP -iTCP:5001-5005 -sTCP:LISTEN`.
+2. Subir os cinco supermercados e o agregador: `cd backend && .venv/bin/python iniciar.py`. Na primeira execução as bases SQLite são geradas.
+3. Em outro terminal, o cliente: `cd backend && .venv/bin/python -m cliente`. Uma pesquisa só: `.venv/bin/python -m cliente arroz --modo sequencial`.
+4. Os experimentos: `cd backend && .venv/bin/python -m experimentos` (cerca de 6 minutos).
+5. Os testes: `cd backend && .venv/bin/python -m pytest`.
+6. Conferir os processos TCP: `lsof -nP -iTCP:5001-5005 -iTCP:5050 -sTCP:LISTEN`.
+7. Interface web (opcional): `cd frontend && npm install && npm run dev`, e abrir `http://localhost:5173`. Com `npm run build`, o próprio agregador serve a interface em `http://localhost:8000`.
 
-A documentação interativa da API fica em `http://localhost:8000/docs`. Com `npm run build`, o próprio agregador passa a servir a interface em `http://localhost:8000`.
+## Apêndice B. Roteiro da demonstração
 
-## Apêndice B. Rotas da API
-
-| Rota | Descrição |
-| --- | --- |
-| `GET /api/search/sequential?q=&category=&sort=&page=` | Consulta os mercados um de cada vez; filtra, ordena e pagina |
-| `GET /api/search/concurrent?q=&category=&sort=&page=` | Consulta todos os mercados ao mesmo tempo; filtra, ordena e pagina |
-| `GET /api/history/{slug}?days=` | Histórico de preço do produto nos cinco mercados (comando `HISTORY`) |
-| `POST /api/basket/{modo}` | Total de uma cesta em cada mercado |
-| `POST /api/benchmark` | Executa N rodadas de cada modo e devolve estatísticas |
-| `GET /api/markets` | Estado de cada mercado, obtido pelo comando `STATUS` |
-| `POST /api/markets/{id}/config` | Altera latência e disponibilidade (comando `CONFIG`) |
-| `GET /api/metrics/history` | Histórico de requisições |
-| `GET /api/metrics/export.csv` | Histórico em CSV, com bytes recebidos por mercado |
-| `WS /ws/events` | Eventos em tempo real |
+1. `iniciar.py` sobe os seis processos de servidor; `lsof` mostra as portas 5050 e 5001–5005, cada supermercado com seu PID.
+2. No cliente de terminal: `arroz branco 5 kg` no modo concorrente; `/modo sequencial` e a mesma pesquisa; `/comparar arroz 3` mostra o speedup; `/json` mostra a mensagem do protocolo.
+3. Dois ou três terminais com o cliente ao mesmo tempo; `/mercados` mostra quantos clientes estão conectados.
+4. `/derrubar ipe` e pesquisar: a resposta vem dos outros quatro, com o motivo; `/religar ipe`.
+5. No painel web, as pesquisas do terminal aparecem ao vivo, com a linha do tempo das cinco conexões.
+6. Gráficos dos experimentos (Figuras 5 a 8).
 
 ## Referências
 
-- Python Software Foundation. [socket — Low-level networking interface](https://docs.python.org/3/library/socket.html).
-- Python Software Foundation. [concurrent.futures — Launching parallel tasks](https://docs.python.org/3/library/concurrent.futures.html).
-- Python Software Foundation. [threading — Thread-based parallelism](https://docs.python.org/3/library/threading.html).
-- [FastAPI — documentação oficial](https://fastapi.tiangolo.com/).
-- [Open Food Facts](https://world.openfoodfacts.org/), fonte das fotos dos produtos (licença CC BY-SA).
-- Kurose, J. F.; Ross, K. W. *Redes de computadores e a Internet: uma abordagem top-down*. Pearson.
-- Tanenbaum, A. S.; Van Steen, M. *Sistemas distribuídos: princípios e paradigmas*. Pearson.
+- TANENBAUM, Andrew S.; VAN STEEN, Maarten. *Distributed Systems: Principles and Paradigms*. 2. ed. Prentice Hall, 2007.
+- SOMMERVILLE, Ian. *Software Engineering*. 10. ed. Pearson, 2015.
+- KUROSE, James F.; ROSS, Keith W. *Redes de computadores e a Internet: uma abordagem top-down*. Pearson.
+- PYTHON SOFTWARE FOUNDATION. *socket — Low-level networking interface*. Disponível em: https://docs.python.org/3/library/socket.html.
+- PYTHON SOFTWARE FOUNDATION. *socketserver — A framework for network servers*. Disponível em: https://docs.python.org/3/library/socketserver.html.
+- PYTHON SOFTWARE FOUNDATION. *threading — Thread-based parallelism*. Disponível em: https://docs.python.org/3/library/threading.html.
+- PYTHON SOFTWARE FOUNDATION. *concurrent.futures — Launching parallel tasks*. Disponível em: https://docs.python.org/3/library/concurrent.futures.html.
+- Open Food Facts, fonte das fotos dos produtos da interface web (licença CC BY-SA). Disponível em: https://world.openfoodfacts.org/.

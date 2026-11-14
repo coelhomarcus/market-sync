@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-from markets.catalog import TYPES, ProductType  # noqa: E402
+from mercados.catalogo import TYPES, ProductType  # noqa: E402
 
 OUT = ROOT / "frontend" / "public" / "products"
 CREDITS = OUT / "CREDITS.md"

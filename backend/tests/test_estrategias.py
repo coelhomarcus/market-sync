@@ -1,9 +1,9 @@
 import dataclasses
 import time
 
-import config
-from aggregator.client import query_market
-from aggregator.strategies import concurrent, sequential
+from comum import config
+from agregador.consulta_mercado import query_market
+from agregador.estrategias import concurrent, sequential
 
 PAYLOAD = {"cmd": "SEARCH", "q": "arroz"}
 

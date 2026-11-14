@@ -91,7 +91,7 @@ export interface MetricRecord {
   ts: number
   mode: Mode
   kind: 'search' | 'basket'
-  source: 'loja' | 'benchmark' | 'comparacao'
+  source: 'loja' | 'benchmark' | 'comparacao' | 'cliente_tcp'
   query: string
   total_ms: number
   ok_count: number

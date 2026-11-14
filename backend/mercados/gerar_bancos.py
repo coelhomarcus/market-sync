@@ -6,7 +6,7 @@ Cada mercado recebe o catálogo comum (≈1.700 SKUs) com:
   * estoque aleatório (às vezes zerado) e um código de barras EAN-13 fictício.
 
 O gerador usa semente fixa por mercado: rodar de novo produz os mesmos dados.
-Uso:  python -m markets.seed
+Uso:  python -m mercados.gerar_bancos
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ import random
 import sqlite3
 from pathlib import Path
 
-from config import DATA_DIR, MARKETS, MarketInfo
-from markets.catalog import CATALOG, search_text
+from comum.config import DATA_DIR, MARKETS, MarketInfo
+from mercados.catalogo import CATALOG, search_text
 
 SCHEMA = """
 CREATE TABLE products (

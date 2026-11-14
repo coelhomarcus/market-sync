@@ -12,9 +12,9 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from config import MarketInfo
+from comum.config import MarketInfo
 
-from .client import Emit, MarketResult, query_market
+from .consulta_mercado import Emit, MarketResult, query_market
 
 MODES = ("sequential", "concurrent")
 

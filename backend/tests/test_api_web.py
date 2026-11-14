@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from aggregator.main import create_app
+from agregador.api_web import create_app
 
 
 @pytest.fixture

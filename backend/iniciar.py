@@ -1,6 +1,6 @@
 """Sobe o sistema inteiro: 5 processos de mercado (TCP) + o agregador (HTTP/WS).
 
-Uso (dentro de backend/):  .venv/bin/python run_all.py
+Uso (dentro de backend/):  .venv/bin/python iniciar.py
 Ctrl+C encerra todos os processos.
 """
 
@@ -13,8 +13,8 @@ import subprocess
 import sys
 import time
 
-from config import BACKEND_DIR as BACKEND, MARKET_HOST, MARKETS
-from markets.seed import is_ready, seed_all
+from comum.config import BACKEND_DIR as BACKEND, MARKET_HOST, MARKETS
+from mercados.gerar_bancos import is_ready, seed_all
 
 API_PORT = int(os.environ.get("API_PORT", "8000"))
 
@@ -47,14 +47,14 @@ def main() -> int:
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     try:
         for m in MARKETS:
-            p = subprocess.Popen([sys.executable, "-m", "markets.server", "--id", m.id], cwd=BACKEND, env=env)
+            p = subprocess.Popen([sys.executable, "-m", "mercados.servidor", "--id", m.id], cwd=BACKEND, env=env)
             procs.append((m.name, p))
         for m in MARKETS:
             ok = wait_port(m.port)
             print(f"  {'✔' if ok else '✘'} {m.name:<16} tcp://{MARKET_HOST}:{m.port}  latência {m.latency_ms} ms  (pid {dict(procs)[m.name].pid})")
 
         api = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "aggregator.main:app", "--host", "127.0.0.1", "--port", str(API_PORT),
+            [sys.executable, "-m", "uvicorn", "agregador.api_web:app", "--host", "127.0.0.1", "--port", str(API_PORT),
              "--timeout-graceful-shutdown", "2"],
             cwd=BACKEND,
             env=env,

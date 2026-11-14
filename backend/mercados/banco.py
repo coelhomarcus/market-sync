@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from markets.catalog import normalize
+from mercados.catalogo import normalize
 
 
 class MarketDatabase:

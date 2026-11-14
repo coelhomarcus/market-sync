@@ -1,57 +1,116 @@
-# Requisitos e casos de uso
+# Documento de requisitos — Comparador de Preços de Supermercados
 
-## Atores
+Trabalho 1 de Sistemas Distribuídos, Tema 1. Este documento cobre a seção 5 do enunciado: análise de requisitos, requisitos funcionais e não funcionais, restrições, critérios de aceitação e casos de uso.
 
-| Ator | Descrição |
-|---|---|
-| **Consumidor** | Pessoa que pesquisa produtos, compara preços e monta uma cesta de compras na loja (`/`). |
-| **Avaliador / Operador** | Professor ou membro do grupo que acompanha o painel (`/painel`), compara os modos, escolhe cenários (lento, timeout, fora do ar) para os mercados para observar o comportamento do sistema. |
-| **Serviço de mercado** (ator secundário) | Cada um dos 5 processos servidores TCP que respondem às consultas com dados do próprio SQLite. |
+## 1. Descrição do problema
 
-## Requisitos funcionais
+Quem quer economizar nas compras precisa saber quanto o mesmo produto custa em cada supermercado. Hoje isso significa abrir o site de cada loja, pesquisar o produto várias vezes e comparar os preços de cabeça. Cada supermercado é um sistema independente, com seu próprio catálogo, preços e estoque, e responde no seu próprio tempo.
 
-| ID | Requisito | Onde está |
+Um comparador automatiza essa tarefa: recebe a pesquisa, consulta todos os supermercados e devolve os preços já ordenados, apontando o mais barato. O desafio técnico é o tempo de resposta. Se o comparador consulta um supermercado de cada vez, o usuário espera a **soma** dos tempos de todos. Como as consultas são independentes, elas podem ser feitas ao mesmo tempo, e o usuário passa a esperar só o supermercado **mais lento**. O comparador também precisa continuar funcionando quando um supermercado está lento ou fora do ar.
+
+## 2. Objetivo do sistema
+
+Permitir que o usuário informe um produto e receba, em uma única resposta, os preços desse produto em pelo menos quatro supermercados independentes, ordenados do menor para o maior, com o menor preço identificado. O sistema deve consultar os supermercados por sockets TCP de duas formas, sequencial e concorrente (com threads), e medir o tempo de cada uma para que a diferença possa ser estudada em experimentos.
+
+## 3. Escopo
+
+**Dentro do escopo**
+
+- Cinco supermercados simulados, cada um um processo servidor TCP com sua própria base SQLite (produtos, preços e estoque fictícios).
+- Um agregador que recebe pesquisas, consulta os supermercados no modo sequencial ou concorrente, consolida e ordena os resultados.
+- Dois clientes: um **cliente de terminal** (`cliente/`), que fala com o agregador por socket TCP, e uma **interface web** (loja e painel), que fala com o agregador por HTTP e WebSocket.
+- Pesquisa de produtos, comparação de preços, identificação do menor preço e comparação de cestas de compras (evolução sugerida no enunciado).
+- Medição de tempos, tratamento de falhas (lentidão, queda, processo parado) e um script que executa os cinco experimentos obrigatórios.
+
+**Fora do escopo**
+
+- Preços reais ou integração com sites de supermercados de verdade.
+- Cadastro de usuários, login, pagamento ou finalização de compra.
+- Persistência das métricas em banco (ficam em memória e podem ser exportadas em CSV).
+- Distribuição em várias máquinas, balanceamento de carga e replicação (o sistema roda em `127.0.0.1`, mas os endereços são configuráveis).
+
+## 4. Atores
+
+| Ator | Tipo | Descrição |
 |---|---|---|
-| RF01 | Permitir pesquisar produtos por nome, categoria ou palavra-chave, sem diferenciar acentos e maiúsculas. | Loja, campo de busca; `SEARCH` no servidor |
-| RF02 | Consultar pelo menos quatro supermercados independentes (o sistema tem cinco processos). | `config.py`, `run_all.py` |
-| RF03 | Exibir o preço de cada produto em cada supermercado. | Painel lateral do produto |
-| RF04 | Ordenar os resultados por preço (produtos pelo menor preço, ofertas de cada produto do menor para o maior). | `build_search_response`, `markets/server.py` |
-| RF05 | Destacar o supermercado com o menor preço. | Selo "Menor preço" e etiqueta vermelha |
-| RF06 | Oferecer duas rotas de consulta: sequencial e concorrente. | `GET /api/search/sequential` e `/concurrent` |
-| RF07 | Medir e comparar o tempo das consultas sequenciais e concorrentes. | Faixa de tempo na loja, painel, benchmark |
-| RF08 | Comparar uma cesta de compras e identificar o mercado de menor custo total (evolução sugerida no enunciado). | `POST /api/basket/{mode}`, gaveta "Sua cesta" |
-| RF09 | Indicar os mercados que não têm todos os itens da cesta (a cesta mais barata só considera cestas completas). | `missing` / `complete` na resposta da cesta |
-| RF10 | Exibir em tempo real os eventos de cada conexão TCP (connect, resposta, erro). | WebSocket `/ws/events`, "Eventos ao vivo" |
-| RF11 | Exibir o diagrama de tempo (Gantt) das últimas consultas de cada modo. | "Linha do tempo das conexões TCP" |
-| RF12 | Rodar benchmark com N repetições e calcular média, mínimo, máximo, desvio padrão e speedup. | `POST /api/benchmark` |
-| RF13 | Exportar o histórico de métricas em CSV. | `GET /api/metrics/export.csv` |
-| RF14 | Permitir alterar a latência simulada de cada mercado e tirá-lo do ar. | Comando `CONFIG`, botões de cenário na seção "Mercados" |
-| RF15 | Filtrar por categoria, ordenar (destaques, menor preço, maior diferença, nome) e paginar os resultados. | Parâmetros de `GET /api/search/{mode}` |
-| RF16 | Comparar os dois modos lado a lado com a mesma busca. | Botão "Comparar os dois modos" em `/painel` |
-| RF17 | Medir e comparar o consumo de recursos (CPU, threads, memória) dos dois modos. | Seção "Consumo de recursos" do painel, colunas de recursos no CSV |
+| **Consumidor** | Principal | Pesquisa produtos, compara preços e monta cestas, pelo cliente de terminal ou pela loja web. |
+| **Avaliador / Operador** | Principal | Professor ou integrante do grupo. Compara os modos, roda os experimentos, altera a latência e derruba supermercados para observar o comportamento do sistema. |
+| **Serviço de supermercado** | Secundário | Cada um dos cinco processos servidores TCP. Responde às consultas do agregador com dados da própria base. |
 
-## Requisitos não funcionais
+## 5. Requisitos funcionais
 
-| ID | Requisito | Como é atendido |
-|---|---|---|
-| RNF01 | Comunicação real por sockets TCP entre agregador e mercados. | `socket.create_connection` no cliente; `socket/bind/listen/accept` no servidor. Verificável com `lsof -iTCP:5001-5005 -sTCP:LISTEN`. |
-| RNF02 | Concorrência com multithreading. | Agregador: `ThreadPoolExecutor` com uma thread por mercado. Mercado: uma `threading.Thread` por conexão aceita. |
-| RNF03 | Tolerância a falhas: um mercado lento ou fora do ar não pode derrubar a consulta. | Timeout de 3 s por conexão; erros viram resultado parcial (`ok=false`) em vez de exceção. |
-| RNF04 | Independência dos serviços: cada mercado tem processo, porta e banco próprios. | 5 processos, portas 5001–5005, `data/<mercado>.db`. |
-| RNF05 | Desempenho: com as latências padrão, a busca concorrente deve levar perto da maior latência (~1,2 s), e a sequencial perto da soma (~3,6 s). | Ver `experimentos.md`. |
-| RNF06 | Protocolo robusto a fragmentação do TCP. | Uma mensagem JSON por linha, lida com `readline()` (`protocol.py`), testado com envio em pedaços de 7 bytes. |
-| RNF07 | Interface em português, utilizável em celular e acessível por teclado. | Layout responsivo, foco visível, rótulos ARIA. |
-| RNF08 | Reprodutibilidade dos dados. | `seed.py` usa semente fixa por mercado e data de referência fixa. |
-| RNF09 | Testabilidade. | 35 testes `pytest` cobrindo protocolo, servidor, estratégias e API. |
-| RNF10 | Volume de dados realista. | 1.740 SKUs no catálogo e 7.730 produtos nos 5 bancos. |
+| ID | Requisito | Prioridade | Onde está |
+|---|---|---|---|
+| RF01 | O sistema deverá permitir que o usuário informe o produto a pesquisar e o modo de consulta. | Essencial | `cliente/` (operação `consultar`), campo de busca da loja |
+| RF02 | O sistema deverá consultar pelo menos quatro supermercados independentes (são cinco). | Essencial | `comum/config.py`, `mercados/servidor.py` |
+| RF03 | O sistema deverá permitir consultas sequenciais: um supermercado de cada vez. | Essencial | `estrategias.sequential` |
+| RF04 | O sistema deverá permitir consultas concorrentes: todos os supermercados ao mesmo tempo, com uma thread por supermercado. | Essencial | `estrategias.concurrent` |
+| RF05 | O sistema deverá apresentar o preço de cada produto encontrado em cada supermercado. | Essencial | resposta `resultados[].ofertas`, painel do produto na loja |
+| RF06 | O sistema deverá ordenar os resultados por preço: os produtos pelo menor preço e, dentro de cada produto, as ofertas do mais barato para o mais caro. | Essencial | `consolidacao.merge_offers`, `consolidacao.search_response` |
+| RF07 | O sistema deverá identificar o supermercado com o menor preço de cada produto. | Essencial | campo `menor_preco`, marca ★ no terminal, selo "Menor preço" na loja |
+| RF08 | O sistema deverá registrar o tempo de execução de cada pesquisa (total e de cada supermercado). | Essencial | `tempo_total_ms` e `mercados[].tempo_ms` na resposta; histórico de métricas |
+| RF09 | O sistema deverá comparar as estratégias sequencial e concorrente para a mesma pesquisa, informando o speedup. | Essencial | operação `comparar`, `/comparar` no terminal, painel "Comparar modos" |
+| RF10 | O sistema deverá informar quais supermercados não responderam e o motivo, sem descartar os resultados dos demais. | Essencial | `status: "parcial"`, `mercados[].erro` |
+| RF11 | O sistema deverá comparar uma cesta de compras e identificar o supermercado de menor custo total entre os que têm todos os itens. | Desejável | operação `cesta`, gaveta "Sua cesta" |
+| RF12 | O sistema deverá permitir alterar a latência simulada e a disponibilidade de cada supermercado durante a execução. | Essencial (experimentos) | operação `configurar`, comando `CONFIG` do mercado, botões do painel |
+| RF13 | O sistema deverá executar os experimentos obrigatórios de forma automática e salvar os resultados em CSV e gráficos. | Essencial (experimentos) | `experimentos/` |
+| RF14 | O sistema deverá exibir em tempo real os eventos de cada conexão TCP (início, resposta, nova tentativa, erro). | Desejável | WebSocket `/ws/events`, painel |
+| RF15 | O sistema deverá exportar o histórico de métricas em CSV. | Desejável | `GET /api/metrics/export.csv` |
+| RF16 | O sistema deverá medir o consumo de recursos (CPU e threads) de cada modo. | Desejável | `resources` no registro de cada pesquisa |
 
-## Casos de uso
+## 6. Requisitos não funcionais
+
+| ID | Categoria | Requisito | Como é atendido |
+|---|---|---|---|
+| RNF01 | Comunicação | A comunicação entre cliente, agregador e supermercados deverá usar sockets TCP. | Cliente → agregador: porta 5050. Agregador → supermercados: portas 5001–5005. `socket.create_connection` nos clientes, `socketserver.ThreadingTCPServer` nos servidores. A interface web usa HTTP e WebSocket, que também rodam sobre TCP. |
+| RNF02 | Concorrência | A estratégia concorrente deverá usar threads. | `ThreadPoolExecutor` com uma thread por supermercado. |
+| RNF03 | Escalabilidade | Os servidores deverão atender múltiplas conexões simultaneamente. | Agregador: uma thread por cliente TCP (e uma por requisição HTTP). Supermercado: uma thread por conexão. Medido no Experimento 4. |
+| RNF04 | Confiabilidade | O sistema deverá tratar falhas de comunicação sem derrubar a pesquisa. | Timeout de 3 s por supermercado; até 3 novas tentativas (0,5 s → 1 s → 2 s) quando a conexão é recusada ou fechada sem resposta; resultado parcial com o erro de cada supermercado. Medido no Experimento 5. |
+| RNF05 | Mensurabilidade | A aplicação deverá permitir experimentos de desempenho reproduzíveis. | Latência configurável em tempo de execução, `experimentos/`, CSV com os dados brutos. |
+| RNF06 | Interoperabilidade | O protocolo de aplicação deverá ser documentado e robusto à fragmentação do TCP. | JSON em UTF-8, uma mensagem por linha (`docs/protocolo.md`); testado com envio em pedaços de 7 bytes. |
+| RNF07 | Independência | Cada supermercado deverá executar como processo independente, com porta e base próprias. | 5 processos, portas 5001–5005, `data/<mercado>.db`. |
+| RNF08 | Desempenho | Com as latências padrão, a pesquisa concorrente deverá levar perto da maior latência (~1,2 s) e a sequencial perto da soma (~3,6 s). | Experimentos 1 e 2. |
+| RNF09 | Testabilidade | O sistema deverá ter testes automatizados para protocolo, servidores, estratégias e API. | 55 testes `pytest`. |
+| RNF10 | Usabilidade | As interfaces deverão estar em português e mostrar claramente o menor preço e o tempo gasto. | Terminal com cores e ★; loja responsiva e acessível por teclado. |
+
+## 7. Restrições
+
+- **Linguagem e bibliotecas:** Python 3.12. A comunicação TCP usa só a biblioteca padrão (`socket`, `socketserver`, `threading`, `concurrent.futures`), sem frameworks de RPC ou mensageria.
+- **Comunicação real:** não é aceita uma implementação que simule a comunicação sem sockets. Toda consulta aos supermercados atravessa uma conexão TCP.
+- **Dados simulados:** supermercados, marcas, preços e estoques são fictícios, gerados com semente fixa (`mercados/gerar_bancos.py`).
+- **Latência simulada:** em `localhost` a rede responde em menos de 1 ms. Cada supermercado espera um tempo configurável (±15%) antes de responder, imitando um servidor remoto.
+- **Ambiente:** todos os processos rodam na mesma máquina, em portas distintas (`127.0.0.1`). Os endereços podem ser trocados por variáveis de ambiente (`MARKET_HOST`, `AGGREGATOR_HOST`, `AGGREGATOR_TCP_PORT`).
+- **Prazo e equipe:** trabalho em dupla, apresentação em 16/11/2026, com 15 a 20 minutos e demonstração prática.
+
+## 8. Critérios de aceitação
+
+Cada critério pode ser verificado com o sistema no ar (`iniciar.py`) ou pelos testes automatizados indicados.
+
+| ID | Critério | Requisitos | Como verificar |
+|---|---|---|---|
+| CA01 | Ao pesquisar "arroz" no cliente de terminal, o usuário recebe os preços dos 5 supermercados em uma única resposta. | RF01, RF02, RF05 | `python -m cliente arroz`; `test_consultar_returns_prices_sorted_with_cheapest` |
+| CA02 | Os produtos aparecem do menor para o maior preço e, em cada produto, as ofertas também. | RF06 | mesmo teste acima; inspeção da saída |
+| CA03 | O supermercado mais barato de cada produto é destacado (★ no terminal, campo `menor_preco`). | RF07 | inspeção da saída; mesmo teste |
+| CA04 | Com as latências padrão, a pesquisa sequencial leva pelo menos 95% da soma das latências, e a concorrente fica abaixo da maior latência mais 250 ms. | RF03, RF04, RNF08 | `test_concurrent_is_faster_than_sequential`; Experimentos 1 e 2 |
+| CA05 | Toda resposta informa o tempo total e o tempo de cada supermercado. | RF08 | campos `tempo_total_ms` e `mercados[].tempo_ms` |
+| CA06 | `/comparar arroz 3` mostra a média de cada modo e o speedup. | RF09 | `test_comparar_reports_speedup` |
+| CA07 | Com um supermercado fora do ar (antes ou durante a pesquisa), o usuário recebe os preços dos outros 4, com `status: "parcial"` e o motivo da falha. | RF10, RNF04 | `test_offline_market_gives_partial_result`, `test_market_going_down_during_search`; Experimento 5 |
+| CA08 | Com todos os supermercados fora do ar, a resposta é um erro identificado (`NENHUM_MERCADO_RESPONDEU`), não um travamento. | RNF04 | `test_all_markets_down_is_an_error` |
+| CA09 | Oito clientes pesquisando ao mesmo tempo são todos atendidos, e o tempo total fica próximo ao de um cliente sozinho. | RNF03 | `test_many_clients_at_the_same_time`; Experimento 4 |
+| CA10 | Um pedido inválido (JSON quebrado, operação desconhecida, parâmetro faltando) recebe uma resposta de erro com código, e a conexão continua utilizável. | RNF06 | `test_invalid_requests_get_error_codes`, `test_invalid_json_gets_error_and_connection_survives` |
+| CA11 | A cesta indica o supermercado de menor total entre os que têm todos os itens. | RF11 | `test_cesta_finds_cheapest_market` |
+| CA12 | `lsof -nP -iTCP -sTCP:LISTEN` mostra o agregador na porta 5050 e os cinco supermercados nas portas 5001–5005, cada um num processo. | RNF01, RNF07 | comando na demonstração |
+| CA13 | `python -m experimentos` executa os cinco experimentos e gera tabelas e gráficos sem intervenção. | RF13, RNF05 | execução do script |
+
+## 9. Casos de uso
+
+Diagrama em `docs/relatorio/figuras/fig-01-casos-de-uso.png`.
 
 ```mermaid
 flowchart LR
     C([Consumidor])
     A([Avaliador / Operador])
-    M([Serviço de mercado])
+    M([Serviço de supermercado])
 
     subgraph Sistema["Comparador de Preços"]
         UC1(UC01 Pesquisar produto)
@@ -59,10 +118,10 @@ flowchart LR
         UC3(UC03 Escolher modo sequencial ou concorrente)
         UC4(UC04 Montar e comparar cesta)
         UC5(UC05 Acompanhar métricas em tempo real)
-        UC6(UC06 Rodar benchmark)
+        UC6(UC06 Comparar modos / rodar experimentos)
         UC7(UC07 Exportar métricas CSV)
-        UC8(UC08 Configurar latência / derrubar mercado)
-        UC9(UC09 Consultar mercados via TCP)
+        UC8(UC08 Configurar latência / derrubar supermercado)
+        UC9(UC09 Consultar supermercados via TCP)
     end
 
     C --- UC1 & UC2 & UC3 & UC4
@@ -74,24 +133,35 @@ flowchart LR
 ```
 
 ### UC01 — Pesquisar produto
-- **Ator:** Consumidor. **Pré-condição:** agregador e mercados rodando.
-- **Fluxo principal:** 1. O consumidor digita um termo e confirma. 2. O front chama `GET /api/search/{modo}?q=termo`. 3. O agregador envia `SEARCH` a cada mercado por TCP (UC09), um por vez ou todos ao mesmo tempo. 4. O agregador agrupa as ofertas por produto, ordena por preço e marca o menor. 5. A loja exibe os produtos, o tempo total e a linha do tempo das conexões.
-- **Fluxo alternativo 3a:** um mercado não responde (fora do ar, processo parado ou timeout). O agregador registra o erro e segue com os demais; a loja informa quais mercados não responderam.
-- **Fluxo alternativo 4a:** nenhum produto encontrado. A loja sugere termos mais simples.
+- **Ator:** Consumidor. **Pré-condição:** agregador e supermercados no ar.
+- **Fluxo principal:**
+  1. O consumidor digita um produto no cliente de terminal (ou na loja).
+  2. O cliente envia `{"operacao": "consultar", "produto": "arroz", "modo": "concorrente"}` ao agregador pela conexão TCP aberta (a loja usa `GET /api/search/concurrent?q=arroz`).
+  3. O agregador envia `SEARCH` a cada supermercado por TCP (UC09), um por vez ou todos ao mesmo tempo.
+  4. O agregador agrupa as ofertas por produto, ordena por preço e marca o menor.
+  5. O cliente mostra os produtos, o preço em cada supermercado, o menor preço e o tempo de cada supermercado.
+- **Fluxo alternativo 3a:** um supermercado não responde (fora do ar, processo parado ou timeout). O agregador tenta de novo quando faz sentido, registra o erro e segue com os demais; a resposta vem com `status: "parcial"` e o motivo.
+- **Fluxo alternativo 3b:** nenhum supermercado responde. A resposta é um erro `NENHUM_MERCADO_RESPONDEU`.
+- **Fluxo alternativo 4a:** nenhum produto encontrado. O cliente sugere termos mais simples.
+- **Fluxo de exceção 2a:** o pedido é inválido (sem produto, modo desconhecido). O agregador responde `PARAMETRO_INVALIDO` e a conexão continua aberta.
 
 ### UC02 — Comparar preços de um produto
-- **Fluxo:** 1. O consumidor abre um produto. 2. O sistema lista os mercados do menor para o maior preço, com o selo "Menor preço" e a diferença de cada um para o mais barato. 3. Mercados sem o produto, sem estoque ou sem resposta aparecem separados.
+- **Fluxo:** 1. O consumidor escolhe um produto da lista. 2. O sistema mostra os supermercados do menor para o maior preço, com o mais barato destacado e a diferença de cada um para ele. 3. Supermercados sem o produto, sem estoque ou sem resposta aparecem separados.
+
+### UC03 — Escolher modo sequencial ou concorrente
+- **Fluxo:** o usuário escolhe o modo (`/modo sequencial` no terminal, alternador na loja). As próximas pesquisas usam esse modo, e o tempo de cada uma aparece na resposta.
 
 ### UC04 — Montar e comparar cesta
-- **Fluxo:** 1. O consumidor adiciona itens e quantidades. 2. Pede a comparação. 3. O agregador envia `BASKET` a cada mercado. 4. O sistema mostra o total por mercado, aponta a cesta completa mais barata e quantos itens faltam nos outros.
-- **Alternativo 4a:** nenhum mercado tem todos os itens; os totais parciais aparecem com a lista do que falta.
+- **Fluxo:** 1. O consumidor escolhe itens e quantidades (`/cesta 1 3x2` no terminal, gaveta "Sua cesta" na loja). 2. O agregador envia `BASKET` a cada supermercado. 3. O sistema mostra o total em cada supermercado e aponta a cesta completa mais barata.
+- **Alternativo 3a:** nenhum supermercado tem todos os itens; os totais parciais aparecem com a lista do que falta.
 
-### UC06 — Rodar benchmark
-- **Fluxo:** 1. O avaliador define rodadas e termo. 2. O agregador executa a busca nos dois modos alternando a ordem. 3. O painel mostra o progresso ao vivo e, no fim, média, mínimo, máximo, desvio e speedup.
+### UC06 — Comparar modos / rodar experimentos
+- **Fluxo:** 1. O avaliador escolhe a pesquisa e o número de rodadas (`/comparar arroz 5`, painel "Comparar os dois modos" ou `experimentos/`). 2. O agregador executa a pesquisa nos dois modos, alternando a ordem. 3. O sistema mostra média, mínimo, máximo e speedup; o script também grava CSV e gráficos.
 
-### UC08 — Configurar latência / derrubar mercado
-- **Fluxo:** 1. O avaliador move o controle de latência ou clica em "Tirar do ar". 2. O agregador envia `CONFIG` ao mercado por TCP. 3. O mercado passa a dormir a nova latência antes de responder, ou a fechar as conexões de consulta sem responder.
-- **Pós-condição:** as próximas consultas refletem a mudança (timeout acima de 3 s, resposta parcial quando fora do ar).
+### UC08 — Configurar latência / derrubar supermercado
+- **Fluxo:** 1. O avaliador altera a latência ou tira um supermercado do ar (`/latencia ipe 2500`, `/derrubar ipe`, ou os botões do painel). 2. O agregador envia `CONFIG` ao supermercado por TCP. 3. O supermercado passa a esperar a nova latência, ou a fechar as conexões de consulta sem responder, inclusive as que já estavam em andamento.
+- **Pós-condição:** as próximas pesquisas refletem a mudança (timeout acima de 3 s; resultado parcial quando fora do ar).
 
-### UC09 — Consultar mercados via TCP
-- **Fluxo:** 1. Abrir conexão (`connect`). 2. Enviar frame com o comando. 3. Aguardar o frame de resposta. 4. Fechar a conexão. 5. Publicar eventos `market_connect` e `market_response`/`market_error` com os tempos medidos.
+### UC09 — Consultar supermercados via TCP
+- **Fluxo:** 1. Abrir a conexão (`connect`). 2. Enviar a linha JSON com o comando. 3. Aguardar a linha de resposta. 4. Fechar a conexão. 5. Publicar os eventos `market_connect` e `market_response` / `market_error` com os tempos medidos.
+- **Alternativo 3a:** conexão recusada ou fechada sem resposta: nova tentativa após 0,5 s, 1 s e 2 s. **3b:** passou de 3 s sem resposta: desiste (timeout).
