@@ -1,6 +1,6 @@
 """Servidor TCP do supermercado Max Atacarejo: uma thread por conexão (ThreadingTCPServer).
 
-Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.max_atacarejo"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: python3.12 -m markets.max_atacarejo"""
 
 from __future__ import annotations
 

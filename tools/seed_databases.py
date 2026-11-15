@@ -1,6 +1,6 @@
 """Gera o banco SQLite de cada supermercado, com sortimento, preço e estoque próprios.
 
-Uso: .venv/bin/python -m tools.seed_databases   (o start.py roda sozinho se faltar algum banco)"""
+Uso: python3.12 -m tools.seed_databases   (o start.py roda sozinho se faltar algum banco)"""
 
 from __future__ import annotations
 

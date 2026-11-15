@@ -1,6 +1,6 @@
 """Servidor TCP do supermercado Mercadinho Ipê: uma thread por conexão (ThreadingTCPServer).
 
-Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.ipe"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: python3.12 -m markets.ipe"""
 
 from __future__ import annotations
 

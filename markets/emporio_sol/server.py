@@ -1,6 +1,6 @@
 """Servidor TCP do supermercado Empório Sol: uma thread por conexão (ThreadingTCPServer).
 
-Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.emporio_sol"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: python3.12 -m markets.emporio_sol"""
 
 from __future__ import annotations
 

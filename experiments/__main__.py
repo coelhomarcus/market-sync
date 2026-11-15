@@ -1,6 +1,6 @@
 """Roda os 5 experimentos e refaz tabelas e gráficos (com o start.py --quiet no ar).
 
-Uso: .venv/bin/python -m experiments [--only 4 5] [--analyze] [--quick]"""
+Uso: python3.12 -m experiments [--only 4 5] [--analyze] [--quick]"""
 
 import argparse
 import sys

@@ -8,7 +8,7 @@ Trabalho 1 de Sistemas Distribuídos (Tema 1). Um **cliente** pesquisa um produt
 ```
                          porta 5050                          portas 5001–5005
  cliente (terminal) ──── TCP / JSON ────▶ agregador ──── TCP / JSON ────▶ Mercado Aurora   (processo próprio, aurora.db)
- python -m client                        1 thread por       (sequencial   SuperVila        (processo próprio, supervila.db)
+ ./client.py                             1 thread por       (sequencial   SuperVila        (processo próprio, supervila.db)
                                           cliente            ou 5 threads) Empório Sol      (...)
                                               │                            Max Atacarejo
                                               ▼                            Mercadinho Ipê
@@ -22,13 +22,13 @@ Cada componente é um processo separado: 1 agregador + 5 supermercados, mais qua
 
 Precisa de **Python 3.12**. O LibreOffice só é necessário para gerar o relatório em DOCX/PDF.
 
-```bash
-python3.12 -m venv .venv
-```
+Instale as dependências direto na máquina, uma vez:
 
 ```bash
-.venv/bin/pip install -r requirements.txt
+python3.12 -m pip install --user --break-system-packages -r requirements.txt
 ```
+
+O `--break-system-packages` é exigido pelo Python do Homebrew (macOS); em outros sistemas, `python3.12 -m pip install --user -r requirements.txt` basta. No Windows, troque `python3.12` por `py -3.12` em todos os comandos, e `./start.py` / `./client.py` por `py -3.12 start.py` / `py -3.12 client.py`.
 
 Todos os comandos abaixo são rodados **da raiz do projeto**.
 
@@ -37,7 +37,7 @@ Todos os comandos abaixo são rodados **da raiz do projeto**.
 ### Subir o sistema
 
 ```bash
-.venv/bin/python start.py
+./start.py
 ```
 
 Sobe os 5 supermercados e o agregador. Na primeira vez, gera os bancos SQLite. O terminal vira o **painel gráfico**, com o histórico de todas as pesquisas, e **Ctrl+C** encerra tudo: o agregador espera as pesquisas em andamento terminarem e depois fecha os mercados.
@@ -53,7 +53,7 @@ Sobe os 5 supermercados e o agregador. Na primeira vez, gera os bancos SQLite. O
 Em outro terminal:
 
 ```bash
-.venv/bin/python -m client
+./client.py
 ```
 
 Abre o modo interativo: o cliente conecta na porta 5050 e mantém a conexão aberta. Digite um produto (`arroz`, `café 500 g`, `leite integral`) ou um comando:
@@ -72,11 +72,11 @@ Abre o modo interativo: o cliente conecta na porta 5050 e mantém a conexão abe
 Também dá para fazer uma pesquisa só e sair:
 
 ```bash
-.venv/bin/python -m client "arroz branco 5 kg" --mode seq
+./client.py "arroz branco 5 kg" --mode seq
 ```
 
 ```bash
-.venv/bin/python -m client cafe --compare 3
+./client.py cafe --compare 3
 ```
 
 Opções: `--mode seq|con` (padrão `con`), `--compare N`, `--limit N` (produtos mostrados, padrão 5), `--json`, `--host`, `--port`.
@@ -86,7 +86,7 @@ Opções: `--mode seq|con` (padrão `con`), `--compare N`, `--limit N` (produtos
 Cada supermercado é um serviço independente e pode subir sozinho:
 
 ```bash
-.venv/bin/python -m markets.aurora
+python3.12 -m markets.aurora
 ```
 
 Os outros: `markets.supervila`, `markets.emporio_sol`, `markets.max_atacarejo` e `markets.ipe`. Opção: `--latency 800`.
@@ -94,15 +94,15 @@ Os outros: `markets.supervila`, `markets.emporio_sol`, `markets.max_atacarejo` e
 O agregador sozinho (precisa dos supermercados no ar):
 
 ```bash
-.venv/bin/python -m aggregator.tcp_server
+python3.12 -m aggregator.tcp_server
 ```
 
 ### Experimentos obrigatórios
 
-Com o sistema no ar em modo silencioso (`.venv/bin/python start.py --quiet`), em outro terminal:
+Com o sistema no ar em modo silencioso (`./start.py --quiet`), em outro terminal:
 
 ```bash
-.venv/bin/python -m experiments
+python3.12 -m experiments
 ```
 
 Roda os 5 experimentos do enunciado pelo cliente TCP, em cerca de 6 minutos. Grava os CSV em `docs/relatorio/dados/`, as tabelas em `docs/relatorio/dados/resultados-experimentos.md` e os gráficos `fig-08` a `fig-11` em `docs/relatorio/figuras/` (CSV: `exp1-sequencial.csv` … `exp5-indisponibilidade.csv`).
@@ -116,7 +116,7 @@ Roda os 5 experimentos do enunciado pelo cliente TCP, em cerca de 6 minutos. Gra
 Cada experimento também roda sozinho (aceita `--quick` e `--analyze`):
 
 ```bash
-.venv/bin/python -m experiments.exp3_latency
+python3.12 -m experiments.exp3_latency
 ```
 
 Os outros: `experiments.exp1_sequential`, `experiments.exp2_concurrent`, `experiments.exp4_multiple_clients` e `experiments.exp5_unavailability`.
@@ -124,7 +124,7 @@ Os outros: `experiments.exp1_sequential`, `experiments.exp2_concurrent`, `experi
 ### Testes
 
 ```bash
-.venv/bin/python -m pytest
+python3.12 -m pytest
 ```
 
 52 testes, com conexões TCP reais. Eles sobem os 5 supermercados em portas livres, então não precisam do sistema rodando.
@@ -133,11 +133,11 @@ Os outros: `experiments.exp1_sequential`, `experiments.exp2_concurrent`, `experi
 
 | Comando | O que faz |
 |---|---|
-| `.venv/bin/python -m tools.seed_databases` | Gera de novo os bancos SQLite dos supermercados (semente fixa: sempre os mesmos dados) |
+| `python3.12 -m tools.seed_databases` | Gera de novo os bancos SQLite dos supermercados (semente fixa: sempre os mesmos dados) |
 | `tail -f logs/aurora.log` | Log de um supermercado no modo gráfico (no `--raw` ele aparece no próprio terminal) |
 | `lsof -nP -iTCP:5001-5005 -iTCP:5050 -sTCP:LISTEN` | Prova que são 6 processos, cada um escutando na sua porta TCP |
-| `.venv/bin/python scripts/diagrams.py` | Redesenha os diagramas de casos de uso, arquitetura e sequência |
-| `.venv/bin/python scripts/build_report.py` | Gera `relatorio.docx` e `relatorio.pdf` a partir do `relatorio.md`, com o LibreOffice (capa em `docs/relatorio/capa.json`) |
+| `python3.12 scripts/diagrams.py` | Redesenha os diagramas de casos de uso, arquitetura e sequência |
+| `python3.12 scripts/build_report.py` | Gera `relatorio.docx` e `relatorio.pdf` a partir do `relatorio.md`, com o LibreOffice (capa em `docs/relatorio/capa.json`) |
 
 ## Estrutura
 
@@ -145,17 +145,19 @@ Organizada pelos três componentes do enunciado (seção 6). Nomes de pastas, ar
 
 ```
 ├── start.py                   sobe os 5 supermercados e o agregador; Ctrl+C encerra tudo
+├── client.py                  abre o cliente de terminal (atalho para o pacote client/)
 ├── common/                    o que todos compartilham
 │   ├── config.py              portas, latências, timeout e retry
 │   ├── protocol.py            o protocolo TCP: uma mensagem JSON por linha
 │   └── watchdog.py            encerra o servidor se o start.py morrer (sem processos órfãos)
 │
-├── client/                    ① CLIENTE  ·  python -m client
+├── client/                    ① CLIENTE  ·  ./client.py
 │   ├── connection.py          AggregatorClient: o socket TCP com o agregador
 │   └── terminal.py            a interface no terminal
 │
 ├── aggregator/                ② AGREGADOR  ·  porta 5050
 │   ├── tcp_server.py          recebe os clientes: uma thread por cliente
+│   ├── operations.py          as operações do cliente (consultar, comparar, ...)
 │   ├── aggregator.py          escolhe a estratégia e mede o tempo
 │   ├── sequential.py          ★ um supermercado de cada vez (thread_1)
 │   ├── concurrent.py          ★ todos ao mesmo tempo (thread_1 … thread_5)
@@ -257,7 +259,7 @@ Detalhes em [docs/protocolo.md](docs/protocolo.md).
 Deixe dois terminais lado a lado: à esquerda o `start.py` (o painel), à direita o cliente.
 
 1. **Processos e portas:** `lsof -nP -iTCP:5001-5005 -iTCP:5050 -sTCP:LISTEN` mostra os 6 processos, cada um na sua porta.
-2. **Concorrente:** `python -m client`, pesquise `arroz branco 5 kg`. No painel, as 5 barras saem juntas, em 5 threads.
+2. **Concorrente:** `./client.py`, pesquise `arroz branco 5 kg`. No painel, as 5 barras saem juntas, em 5 threads.
 3. **Sequencial:** `/seq` e a mesma pesquisa. No painel, uma escada, numa thread só.
 4. **Speedup:** `/compare arroz 3`.
 5. **Vários clientes:** abra um segundo cliente e pesquise nos dois ao mesmo tempo. São dois quadros em andamento juntos, mesmo no sequencial.

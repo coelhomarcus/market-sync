@@ -1,6 +1,7 @@
+#!/usr/bin/env python3.12
 """Sobe o sistema inteiro: 5 supermercados + o agregador, cada um no seu processo.
 
-Uso: .venv/bin/python start.py [--raw | --quiet]"""
+Uso: ./start.py [--raw | --quiet]   (ou: python3.12 start.py)"""
 
 from __future__ import annotations
 

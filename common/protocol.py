@@ -12,6 +12,10 @@ class ProtocolError(Exception):
     """Mensagem malformada ou conexão encerrada no meio de uma mensagem."""
 
 
+class InvalidMessage(ProtocolError):
+    """A linha chegou inteira, mas não é um objeto JSON: dá para continuar lendo a próxima."""
+
+
 def send(stream: BinaryIO, message: dict) -> int:
     """Escreve a mensagem como uma linha e devolve quantos bytes foram enviados."""
     data = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
@@ -30,7 +34,7 @@ def receive(stream: BinaryIO) -> tuple[dict | None, int]:
     try:
         message = json.loads(line)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProtocolError(f"JSON inválido: {exc}") from exc
+        raise InvalidMessage(f"JSON inválido: {exc}") from exc
     if not isinstance(message, dict):
-        raise ProtocolError("a mensagem deve ser um objeto JSON")
+        raise InvalidMessage("a mensagem deve ser um objeto JSON")
     return message, len(line)

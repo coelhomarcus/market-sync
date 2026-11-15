@@ -149,7 +149,7 @@ def run(experiments: list, quick: bool = False, measure: bool = True) -> int:
         try:
             client = AggregatorClient(timeout=120)
         except OSError as exc:
-            print(f"Agregador inacessível ({exc}). Rode antes: .venv/bin/python start.py --quiet", file=sys.stderr)
+            print(f"Agregador inacessível ({exc}). Rode antes: ./start.py --quiet", file=sys.stderr)
             return 1
         with client:
             configure_all(client)

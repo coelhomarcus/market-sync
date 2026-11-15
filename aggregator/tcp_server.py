@@ -1,6 +1,6 @@
 """Servidor TCP do agregador (porta 5050): uma thread por cliente, uma mensagem JSON por linha.
 
-Operações: consultar, comparar, mercados, configurar, encerrar (docs/protocolo.md)."""
+O que cada operação faz está em operations.py; aqui fica só a parte TCP."""
 
 from __future__ import annotations
 
@@ -9,86 +9,16 @@ import logging
 import signal
 import socket
 import socketserver
-import statistics
 import threading
 
 from common import config, protocol
 from common.watchdog import watch_launcher
 from common.config import MARKETS
 
-from . import consolidation, display
-from .aggregator import Aggregator, MarketNotFound, MarketUnreachable
+from . import display, operations
+from .aggregator import Aggregator
 
-log = logging.getLogger("agregador.tcp")
 SHUTDOWN_WAIT_S = 7.0  # tempo máximo para as pesquisas em andamento terminarem (a mais longa: ~6 s)
-
-MODES = {"sequencial": "sequential", "concorrente": "concurrent", "sequential": "sequential", "concurrent": "concurrent"}
-MODE_NAMES = {"sequential": "sequencial", "concurrent": "concorrente"}
-MAX_QUERY = 80
-MAX_LIMIT = 100
-
-
-class RequestError(Exception):
-    """Pedido inválido: vira uma resposta {"status": "erro", "codigo": ..., "mensagem": ...}."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
-# ---------------------------------------------------------------- validação dos parâmetros
-
-def _mode(request: dict) -> str:
-    raw = str(request.get("modo", "concorrente")).strip().lower()
-    if raw not in MODES:
-        raise RequestError("PARAMETRO_INVALIDO", f"modo inválido: {raw!r} (use 'sequencial' ou 'concorrente')")
-    return MODES[raw]
-
-
-def _product(request: dict) -> str:
-    query = request.get("produto")
-    if not isinstance(query, str) or not query.strip():
-        raise RequestError("PARAMETRO_INVALIDO", "informe o produto a pesquisar no campo 'produto'")
-    return query.strip()[:MAX_QUERY]
-
-
-def _int(request: dict, field: str, default: int, low: int, high: int) -> int:
-    value = request.get(field, default)
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise RequestError("PARAMETRO_INVALIDO", f"'{field}' deve ser um inteiro entre {low} e {high}")
-    return value
-
-
-# ---------------------------------------------------------------- montagem das respostas
-
-def _markets_summary(record: dict) -> list[dict]:
-    """O que aconteceu com cada mercado nesta pesquisa (tempo, tentativas, erro)."""
-    return [{
-        "id": m["market_id"],
-        "fonte": m["market_name"],
-        "status": "erro" if m["error"] else "sucesso",
-        "inicio_ms": m["start_ms"],
-        "fim_ms": m["end_ms"],
-        "tempo_ms": m["duration_ms"],
-        "tentativas": m["attempts"],
-        "bytes_recebidos": m["bytes_received"],
-        "erro": m["error"],
-    } for m in record["markets"]]
-
-
-def _overall_status(record: dict) -> str:
-    if record["ok_count"] == 0:
-        return "erro"
-    return "parcial" if record["error_count"] else "sucesso"
-
-
-def _offer(product: dict, offer: dict) -> dict:
-    return {
-        "fonte": offer["market_name"],
-        "produto": f"{product['name']} {product['brand']} {product['unit']}",
-        "preco": offer["price"],
-        "status": "sucesso" if offer["in_stock"] else "sem_estoque",
-    }
 
 
 class AggregatorTCPServer(socketserver.ThreadingTCPServer):
@@ -144,112 +74,6 @@ class AggregatorTCPServer(socketserver.ThreadingTCPServer):
         with self._no_requests:
             return self._no_requests.wait_for(lambda: self._in_progress == 0, timeout=limit_s)
 
-    # ------------------------------------------------------------ operações
-
-    def dispatch(self, request: dict) -> dict:
-        op = str(request.get("operacao", "")).strip().lower()
-        handler = {  # operação do protocolo (em português, como no enunciado) → método
-            "consultar": self.op_search,
-            "comparar": self.op_compare,
-            "mercados": self.op_markets,
-            "configurar": self.op_configure,
-            "encerrar": self.op_close,
-        }.get(op)
-        if handler is None:
-            raise RequestError("OPERACAO_DESCONHECIDA", f"operação desconhecida: {op!r}")
-        return handler(request)
-
-    def op_search(self, request: dict) -> dict:
-        query, mode = _product(request), _mode(request)
-        limit = _int(request, "limite", 10, 1, MAX_LIMIT)
-        results, record = self.aggregator.execute(mode, {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")
-        data = consolidation.search_response(results, record, category="", sort="preco", page=1, page_size=limit)
-        products = [{
-            "produto": p["name"],
-            "marca": p["brand"],
-            "unidade": p["unit"],
-            "categoria": p["category"],
-            "slug": p["slug"],
-            "menor_preco": {"fonte": p["cheapest"]["market_name"], "preco": p["cheapest"]["price"]} if p["cheapest"] else None,
-            "maior_preco": p["max_price"],
-            "economia": p["savings"],
-            "ofertas": [_offer(p, o) for o in p["offers"]],  # já do menor para o maior preço
-        } for p in data["products"]]
-        status = _overall_status(record)
-        response = {
-            "status": status,
-            "produto": query,
-            "modo": MODE_NAMES[mode],
-            "tempo_total_ms": record["total_ms"],
-            "produtos_encontrados": data["total_products"],
-            "ofertas_encontradas": data["total_offers"],
-            "resultados": products,
-            "mercados": _markets_summary(record),
-        }
-        if status == "erro":
-            response.update({"codigo": "NENHUM_MERCADO_RESPONDEU", "mensagem": "nenhum supermercado respondeu à pesquisa"})
-        return response
-
-    def op_compare(self, request: dict) -> dict:
-        """Roda a mesma pesquisa nos dois modos e devolve os tempos (demonstração / experimentos)."""
-        query = _product(request)
-        runs = _int(request, "repeticoes", 1, 1, 10)
-        records = []
-        for i in range(runs):  # alterna a ordem para nenhum modo levar vantagem
-            for mode in ("sequential", "concurrent") if i % 2 == 0 else ("concurrent", "sequential"):
-                records.append(self.aggregator.execute(mode, {"cmd": "SEARCH", "q": query}, query, source="cliente_tcp")[1])
-        times = {m: [r["total_ms"] for r in records if r["mode"] == m] for m in ("sequential", "concurrent")}
-        mean = {m: round(statistics.fmean(t), 2) for m, t in times.items()}
-        last = {r["mode"]: r for r in records}
-        return {
-            "status": "sucesso",
-            "produto": query,
-            "repeticoes": runs,
-            **{MODE_NAMES[m]: {
-                "tempo_medio_ms": mean[m],
-                "tempo_min_ms": min(times[m]),
-                "tempo_max_ms": max(times[m]),
-                "mercados_ok": last[m]["ok_count"],
-                "mercados": _markets_summary(last[m]),
-            } for m in ("sequential", "concurrent")},
-            "speedup": round(mean["sequential"] / mean["concurrent"], 2),
-        }
-
-    def op_markets(self, request: dict) -> dict:  # noqa: ARG002
-        return {
-            "status": "sucesso",
-            "clientes_conectados": self.clients_connected,
-            "mercados": [{
-                "id": s["id"],
-                "fonte": s["name"],
-                "porta": s["port"],
-                "alcancavel": s["reachable"],
-                "online": s["online"],
-                "latencia_ms": s.get("latency_ms"),
-                "produtos": s.get("products"),
-                "erro": s.get("error"),
-            } for s in self.aggregator.markets_status()],
-        }
-
-    def op_configure(self, request: dict) -> dict:
-        market_id = request.get("mercado")
-        latency = request.get("latencia_ms")
-        online = request.get("online")
-        if latency is not None:
-            latency = _int(request, "latencia_ms", 0, 0, 10_000)
-        if online is not None and not isinstance(online, bool):
-            raise RequestError("PARAMETRO_INVALIDO", "'online' deve ser true ou false")
-        try:
-            s = self.aggregator.configure_market(str(market_id), latency, online)
-        except MarketNotFound:
-            raise RequestError("MERCADO_DESCONHECIDO", f"mercado desconhecido: {market_id!r}") from None
-        except MarketUnreachable as exc:
-            raise RequestError("MERCADO_INDISPONIVEL", str(exc)) from None
-        return {"status": "sucesso", "mercado": s["id"], "fonte": s["name"], "online": s["online"], "latencia_ms": s["latency_ms"]}
-
-    def op_close(self, request: dict) -> dict:  # noqa: ARG002
-        return {"status": "sucesso", "mensagem": "conexão encerrada"}
-
 
 class ClientHandler(socketserver.StreamRequestHandler):
     """Atende UM cliente, numa thread própria, até ele encerrar a conexão."""
@@ -258,55 +82,45 @@ class ClientHandler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         server: AggregatorTCPServer = self.server  # type: ignore[assignment]
-        number = server.client_joined()
-        self.number = number
-        threading.current_thread().name = f"cliente-{number}"
+        self.number = server.client_joined()
+        threading.current_thread().name = f"cliente-{self.number}"
         peer = "%s:%d" % self.client_address[:2]
-        display.event("client_connect", {"client": number, "peer": peer, "connected": server.clients_connected})
+        display.event("client_connect", {"client": self.number, "peer": peer, "connected": server.clients_connected})
         try:
-            self.serve(server)
-        except (ConnectionError, OSError) as exc:  # o cliente sumiu no meio da conversa
-            display.event("client_drop", {"client": number, "error": str(exc)})
+            self.conversation(server)
+        except socket.timeout:  # cliente parado tempo demais
+            self.reply(operations.error("TEMPO_ESGOTADO", "conexão encerrada por inatividade"))
+        except protocol.ProtocolError as exc:  # linha incompleta: não dá para continuar lendo
+            self.reply(operations.error("MENSAGEM_INVALIDA", str(exc)))
+        except OSError as exc:  # o cliente sumiu no meio da conversa
+            display.event("client_drop", {"client": self.number, "error": str(exc)})
         finally:
             server.client_left()
-            display.event("client_disconnect", {"client": number, "connected": server.clients_connected})
+            display.event("client_disconnect", {"client": self.number, "connected": server.clients_connected})
 
-    def serve(self, server: AggregatorTCPServer) -> None:
+    def conversation(self, server: AggregatorTCPServer) -> None:
+        """Lê um pedido, responde e repete, até o cliente fechar o socket ou pedir 'encerrar'."""
         while True:
             try:
-                request, nbytes = protocol.receive(self.rfile)
-            except socket.timeout:
-                self.reply({"status": "erro", "codigo": "TEMPO_ESGOTADO", "mensagem": "conexão encerrada por inatividade"})
-                return
-            except protocol.ProtocolError as exc:
-                self.reply({"status": "erro", "codigo": "MENSAGEM_INVALIDA", "mensagem": str(exc)})
-                if str(exc).startswith("mensagem incompleta"):
-                    return  # a linha não terminou (ou é grande demais): não dá para continuar lendo
+                request, nbytes = protocol.receive(self.rfile)  # espera uma linha JSON
+            except protocol.InvalidMessage as exc:  # JSON quebrado: avisa e lê o próximo
+                self.reply(operations.error("MENSAGEM_INVALIDA", str(exc)))
                 continue
             if request is None:  # o cliente fechou o socket
                 return
             display.event("client_request", {"client": self.number, "bytes": nbytes, "message": request})
 
-            op = str(request.get("operacao", "")).strip().lower()
             server.request_started()
-            try:
-                response = {"operacao": op, **server.dispatch(request)}
-            except RequestError as exc:
-                response = {"operacao": op, "status": "erro", "codigo": exc.code, "mensagem": str(exc)}
-            except Exception as exc:  # noqa: BLE001 — um erro interno não derruba o agregador
-                log.exception("erro ao atender %s", request)
-                response = {"operacao": op, "status": "erro", "codigo": "ERRO_INTERNO", "mensagem": str(exc)}
-            finally:
-                server.request_finished()
-            if "id" in request:  # o cliente pode numerar os pedidos para casar com as respostas
-                response["id"] = request["id"]
+            response = operations.answer(request, server.aggregator, server.clients_connected)
+            server.request_finished()
+
             self.reply(response)
-            if op == "encerrar":
+            if response["operacao"] == "encerrar":
                 return
 
     def reply(self, message: dict) -> None:
         nbytes = protocol.send(self.wfile, message)
-        display.event("client_reply", {"client": getattr(self, "number", 0), "bytes": nbytes, "message": message})
+        display.event("client_reply", {"client": self.number, "bytes": nbytes, "message": message})
 
 
 def _interrupt_signal(signum, frame):  # noqa: ARG001
@@ -325,7 +139,7 @@ def main() -> None:
 
     with AggregatorTCPServer(Aggregator(list(MARKETS)), port=args.port) as server:
         print(f"  Agregador em tcp://{config.AGGREGATOR_HOST}:{server.port}   ·   "
-              f"cliente: .venv/bin/python -m client\n", flush=True)
+              f"cliente: ./client.py\n", flush=True)
         display.start()
         try:
             server.serve_forever()  # thread principal: só faz accept(); cada cliente ganha uma thread

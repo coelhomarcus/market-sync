@@ -1,6 +1,6 @@
 """Servidor TCP do supermercado Mercado Aurora: uma thread por conexão (ThreadingTCPServer).
 
-Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.aurora"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: python3.12 -m markets.aurora"""
 
 from __future__ import annotations
 

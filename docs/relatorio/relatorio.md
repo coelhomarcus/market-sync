@@ -188,13 +188,19 @@ No sequencial, as barras formam uma escada, sempre na mesma thread do agregador 
 
 ### 3.3 Diagrama de sequência
 
-A Figura 3 mostra a operação principal: uma pesquisa concorrente feita pelo cliente de terminal, com um supermercado fora do ar.
+A Figura 3 mostra a operação principal: uma pesquisa concorrente feita pelo cliente de terminal, com um supermercado fora do ar. A Figura 4 mostra a mesma pesquisa no modo sequencial.
 
 ![Figura 3. Sequência de uma pesquisa concorrente](figuras/fig-12-sequencia.png)
 
 *Figura 3. Sequência de uma pesquisa concorrente, do cliente aos supermercados e de volta.*
 
 O cliente abre uma conexão TCP com o agregador e envia o pedido. A thread do agregador que atende esse cliente cria cinco threads de consulta; cada uma abre sua conexão com um supermercado e envia `SEARCH`. As respostas chegam em tempos diferentes. A SuperVila, fora do ar, fecha a conexão sem responder; a thread dela tenta de novo três vezes e desiste. Com os cinco resultados (quatro bons e um erro), o agregador agrupa, ordena, marca o menor preço e responde ao cliente com `status: "parcial"`. No fim da sessão, o cliente envia `encerrar` e o agregador fecha a conexão.
+
+![Figura 4. Sequência de uma pesquisa sequencial](figuras/fig-13-sequencia-sequencial.png)
+
+*Figura 4. Sequência de uma pesquisa sequencial: a thread do cliente consulta um supermercado de cada vez.*
+
+No modo sequencial nenhuma thread é criada: a própria thread que atende o cliente consulta os supermercados em laço. Ela envia `SEARCH` à Aurora, espera a resposta e só então passa à SuperVila, e assim por diante. Cada espera começa quando a anterior termina, por isso o tempo total fica perto da soma das latências (≈ 3,6 s), contra a maior latência (≈ 1,2 s) no concorrente.
 
 ### 3.4 Protocolo de aplicação
 
@@ -257,7 +263,7 @@ O código está organizado pelos três componentes do enunciado, mais uma pasta 
 | --- | --- | --- |
 | `common/` | compartilhado | `config.py` (portas, latências, timeout, retry); `protocol.py` (`send`/`receive`: uma mensagem JSON por linha); `watchdog.py` |
 | `client/` | ① Cliente | `connection.py` (socket TCP com o agregador); `terminal.py` (interface e comandos) |
-| `aggregator/` | ② Agregador | `tcp_server.py` (recebe os clientes); `sequential.py` e `concurrent.py` (as duas estratégias, uma por arquivo); `market_query.py` (uma consulta TCP, com timeout e retry); `aggregator.py` (executa e mede); `consolidation.py` (agrupa, ordena, menor preço); `display.py` (painel ao vivo no terminal) |
+| `aggregator/` | ② Agregador | `tcp_server.py` (recebe os clientes); `operations.py` (as operações do cliente); `sequential.py` e `concurrent.py` (as duas estratégias, uma por arquivo); `market_query.py` (uma consulta TCP, com timeout e retry); `aggregator.py` (executa e mede); `consolidation.py` (agrupa, ordena, menor preço); `display.py` (painel ao vivo no terminal) |
 | `markets/<mercado>/` | ③ Serviços independentes | `server.py` (servidor TCP de um supermercado); `database.py`; o banco `.db` — uma pasta por supermercado |
 | `tools/` | — | `catalog.py` e `seed_databases.py` (geram os bancos) |
 | `experiments/` | — | `exp1_sequential.py` … `exp5_unavailability.py` (um arquivo por experimento) e `shared.py` |
@@ -323,7 +329,7 @@ As bases são geradas por `tools/seed_databases.py` a partir de um catálogo de 
 
 ### 4.4 Agregador TCP e cliente de terminal
 
-O servidor TCP do agregador (`aggregator/tcp_server.py`) também é um `ThreadingTCPServer`. A thread de cada cliente lê uma linha, valida os parâmetros, chama a operação e responde, em laço, até o cliente enviar `encerrar` ou fechar o socket. Parâmetros inválidos levantam um `RequestError` com o código, que vira a resposta de erro; uma exceção inesperada vira `ERRO_INTERNO` sem derrubar a thread.
+O servidor TCP do agregador (`aggregator/tcp_server.py`) também é um `ThreadingTCPServer`. A thread de cada cliente lê uma linha, chama a operação (`aggregator/operations.py`, que valida os parâmetros) e responde, em laço, até o cliente enviar `encerrar` ou fechar o socket. Parâmetros inválidos levantam um `RequestError` com o código, que vira a resposta de erro; uma exceção inesperada vira `ERRO_INTERNO` sem derrubar a thread.
 
 O cliente de terminal (`client/terminal.py`, que usa `client/connection.py`) abre uma conexão no início da sessão e a mantém. Cada linha digitada vira uma pesquisa; os comandos chamam as demais operações:
 
@@ -397,9 +403,9 @@ Dez pesquisas em cada modo, latências padrão (`exp1_sequential.py` e `exp2_con
 | 1 | Sequencial | 3,65 s | 3,43 s | 3,92 s | 177 ms | 3,66 s | 3,60 s (soma) |
 | 2 | Concorrente | 1,19 s | 1,03 s | 1,32 s | 113 ms | 1,20 s | 1,20 s (maior) |
 
-![Figura 4. Experimentos 1 e 2](figuras/fig-08-exp1-exp2.png)
+![Figura 5. Experimentos 1 e 2](figuras/fig-08-exp1-exp2.png)
 
-*Figura 4. Tempo de cada rodada nos dois modos, com o previsto pelo modelo.*
+*Figura 5. Tempo de cada rodada nos dois modos, com o previsto pelo modelo.*
 
 O speedup médio foi de 3,1×, contra 3,0× do modelo (3,6 s ÷ 1,2 s). O sequencial ficou 1,4% acima da soma das latências: além da espera, cada consulta gasta alguns milissegundos com conexão, SQLite e JSON, e no sequencial esses custos também se somam. O concorrente ficou na maior latência (a do Mercadinho Ipê). O concorrente foi mais rápido em todas as rodadas, sem sobreposição entre as faixas: o pior concorrente (1,32 s) levou menos da metade do melhor sequencial (3,43 s). O tempo visto pelo cliente ficou cerca de 10 ms acima do medido no agregador, o custo da ida e volta TCP entre os dois.
 
@@ -419,9 +425,9 @@ Sete configurações de atraso, alteradas pela operação `configurar`, cinco ro
 
 O previsto limita cada latência ao timeout de 3 s.
 
-![Figura 5. Experimento 3](figuras/fig-09-exp3-latencia.png)
+![Figura 6. Experimento 3](figuras/fig-09-exp3-latencia.png)
 
-*Figura 5. Tempo médio por cenário de latência.*
+*Figura 6. Tempo médio por cenário de latência.*
 
 - **Latências iguais dão o maior ganho.** Com cinco mercados iguais o limite teórico é 5×; o medido ficou entre 4,4× e 4,6×. O concorrente espera o mais lento de cinco sorteios de ±15%, que tende a ficar acima da média (1,09 s com 1000 ms configurados).
 - **Latências diferentes reduzem o ganho.** No cenário padrão o limite é 3,6 ÷ 1,2 = 3,0×; o medido foi 3,1×.
@@ -442,9 +448,9 @@ De 1 a 32 clientes, cada um com sua própria conexão TCP, começando juntos (ba
 | 16 | 3,65 s | 4,18 pesquisas/s | 1,20 s | 12,10 pesquisas/s |
 | 32 | 3,66 s | 8,37 pesquisas/s | 1,20 s | 23,97 pesquisas/s |
 
-![Figura 6. Experimento 4](figuras/fig-10-exp4-clientes.png)
+![Figura 7. Experimento 4](figuras/fig-10-exp4-clientes.png)
 
-*Figura 6. Tempo de resposta e vazão conforme o número de clientes simultâneos.*
+*Figura 7. Tempo de resposta e vazão conforme o número de clientes simultâneos.*
 
 O tempo de cada pesquisa praticamente não mudou com mais clientes, e a vazão cresceu na proporção dos clientes: 32 clientes fizeram 96 pesquisas concorrentes em 4,00 s, 26 vezes a vazão de um só. Isso vale também para o modo sequencial (8,37 contra 0,28 pesquisas/s), porque o servidor do agregador é multithread nos dois modos: cada cliente tem sua própria thread, e cada thread faz a sua pesquisa sequencial ao mesmo tempo que as outras. Com 32 clientes no modo concorrente, o agregador tinha 32 threads de cliente, cada uma com 5 threads de consulta (160 conexões simultâneas com os supermercados), e cada supermercado atendia 32 consultas ao mesmo tempo, cada uma numa thread.
 
@@ -463,9 +469,9 @@ A SuperVila (porta 5002, 500 ms, a segunda na ordem de consulta) foi desativada 
 | Cai e volta | Sequencial | 5,25 s | 5 de 5 | 3 |
 | | Concorrente | 2,33 s | 5 de 5 | 3 |
 
-![Figura 7. Experimento 5](figuras/fig-11-exp5-falha.png)
+![Figura 8. Experimento 5](figuras/fig-11-exp5-falha.png)
 
-*Figura 7. A SuperVila cai 0,3 s depois do início da pesquisa. Barras: início e fim da consulta a cada supermercado.*
+*Figura 8. A SuperVila cai 0,3 s depois do início da pesquisa. Barras: início e fim da consulta a cada supermercado.*
 
 Em todos os cenários com a SuperVila fora do ar o cliente recebeu os preços dos outros quatro, com `status: "parcial"` e o motivo `fora do ar (4 tentativas)`. Nos dois modos, a consulta à SuperVila já estava em andamento quando ela caiu (no sequencial ela é a segunda, e começa logo depois dos ~0,3 s do Aurora): a conexão foi fechada na hora e as três novas tentativas levaram a desistência a 0,3 + 0,5 + 1 + 2 = 3,8 s. No concorrente, os outros quatro já tinham respondido em 1,2 s, então a resposta saiu aos 3,82 s. No sequencial, Empório Sol, Max e Ipê só começaram depois da desistência, e os 3,5 s das tentativas se somaram a eles (6,48 s na pesquisa da figura).
 
@@ -522,13 +528,13 @@ O trabalho percorreu as etapas pedidas: análise de requisitos com atores, requi
 
 Requisitos: Python 3.12 e LibreOffice (só para gerar o DOCX/PDF do relatório). Todos os comandos rodam da raiz do projeto.
 
-1. Instalar, uma vez: `python3.12 -m venv .venv` e `.venv/bin/pip install -r requirements.txt`.
-2. Subir os cinco supermercados e o agregador: `.venv/bin/python start.py`. Na primeira execução as bases SQLite são geradas. `--raw` mostra cada chamada linha a linha; `--quiet` desliga o painel.
-3. Em outro terminal, o cliente: `.venv/bin/python -m client`. Uma pesquisa só: `.venv/bin/python -m client arroz --mode seq`.
-4. Os experimentos, com `start.py --quiet` no ar: `.venv/bin/python -m experiments` (cerca de 6 minutos), ou um só: `.venv/bin/python -m experiments.exp3_latency`.
-5. Os testes: `.venv/bin/python -m pytest`.
+1. Instalar as dependências, uma vez: `python3.12 -m pip install --user -r requirements.txt` (no macOS com Homebrew, acrescente `--break-system-packages`).
+2. Subir os cinco supermercados e o agregador: `python3.12 start.py`. Na primeira execução as bases SQLite são geradas. `--raw` mostra cada chamada linha a linha; `--quiet` desliga o painel.
+3. Em outro terminal, o cliente: `python3.12 -m client`. Uma pesquisa só: `python3.12 -m client arroz --mode seq`.
+4. Os experimentos, com `start.py --quiet` no ar: `python3.12 -m experiments` (cerca de 6 minutos), ou um só: `python3.12 -m experiments.exp3_latency`.
+5. Os testes: `python3.12 -m pytest`.
 6. Conferir os processos TCP: `lsof -nP -iTCP:5001-5005 -iTCP:5050 -sTCP:LISTEN`.
-7. Um supermercado sozinho: `.venv/bin/python -m markets.aurora` (opção `--latency 800`).
+7. Um supermercado sozinho: `python3.12 -m markets.aurora` (opção `--latency 800`).
 
 ## Apêndice B. Roteiro da demonstração
 
@@ -538,7 +544,7 @@ Requisitos: Python 3.12 e LibreOffice (só para gerar o DOCX/PDF do relatório).
 4. `/down supervila` e pesquisar: a resposta vem dos outros quatro, com o motivo; `/up supervila`.
 5. Durante tudo isso, o painel do `start.py` fica ao lado: no concorrente as cinco barras saem juntas, em cinco threads; no sequencial elas formam uma escada numa thread só; com a SuperVila fora do ar, a barra dela fica amarela nas novas tentativas e vermelha na desistência.
 6. `start.py --raw` para mostrar cada chamada TCP: connect com a porta local, mensagem enviada, resposta e close, dos dois lados.
-7. Gráficos dos experimentos (Figuras 4 a 7).
+7. Gráficos dos experimentos (Figuras 5 a 8).
 
 ## Referências
 

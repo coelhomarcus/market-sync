@@ -303,7 +303,7 @@ Funções puras, sem rede.
 
 ### [aggregator/tcp_server.py](../aggregator/tcp_server.py): o servidor que os clientes usam
 
-**Validação**: `_mode`, `_product` e `_int` checam os campos e lançam `RequestError(code, message)`, que vira uma resposta `{"status": "erro", "codigo": ...}`. Em `_int`, `isinstance(value, bool)` aparece porque em Python `True` é um `int`, e isso precisa ser rejeitado.
+Só a parte TCP. O que cada operação faz está em `operations.py`.
 
 **`AggregatorTCPServer(ThreadingTCPServer)`**: uma thread por cliente.
 
@@ -313,22 +313,29 @@ Funções puras, sem rede.
   - `wait_for_requests()` usa `wait_for(lambda: self._in_progress == 0, timeout=...)`.
 
   É isso que permite um **desligamento gracioso**: no Ctrl+C, quem já pediu ainda recebe a resposta.
-- `dispatch()` usa um dicionário `operação → método` (`"consultar": self.op_search`, ...).
-- As operações:
-  - `op_search` executa e traduz para o formato do enunciado. O status sai `"sucesso"`, `"parcial"` (algum mercado falhou) ou `"erro"` (nenhum respondeu);
-  - `op_compare` roda os dois modos alternando a ordem e calcula o **speedup** = média sequencial ÷ média concorrente;
-  - `op_markets` e `op_configure` cuidam do status e da configuração dos mercados;
-  - `op_close` responde `"encerrar"`.
 
 **`ClientHandler`**: diferente do mercado, aqui **uma conexão leva vários pedidos**.
 
-- `timeout = 300` faz o socket desistir após 5 min parado, com `socket.timeout`.
-- `serve()` é um `while True` que lê um pedido, despacha e responde, até `None` (o cliente fechou) ou `"encerrar"`.
-- Um JSON inválido recebe resposta de erro **e a conexão continua viva**, a menos que a linha esteja incompleta.
-- `except Exception` garante que um bug num pedido não derrube o agregador.
-- Se o pedido tiver `"id"`, a resposta devolve o mesmo id, para o cliente casar pergunta e resposta.
+- `conversation()` é um `while True`: lê um pedido, chama `operations.answer()` e responde, até `None` (o cliente fechou) ou `"encerrar"`.
+- Um JSON inválido (`InvalidMessage`) recebe resposta de erro **e a conexão continua viva**.
+- `handle()` concentra o que **encerra** a conversa, num único `try`:
+  - `socket.timeout`: o cliente ficou 5 min parado (`timeout = 300`);
+  - `ProtocolError`: a linha chegou incompleta, então não dá para continuar lendo;
+  - `OSError`: o cliente sumiu no meio da conversa.
 
 **`main()`**: `signal.signal(SIGTERM, ...)` faz o `kill` se comportar como Ctrl+C. No `finally`, ignora novos Ctrl+C, espera as pesquisas em andamento e desliga o painel.
+
+### [aggregator/operations.py](../aggregator/operations.py): as operações do cliente
+
+Não sabe nada de socket: recebe o pedido como dicionário e devolve a resposta como dicionário.
+
+- `answer()` escolhe a operação por um dicionário (`"consultar": ...`) e **nunca lança exceção**: `RequestError` vira `{"status": "erro", "codigo": ...}`, e um `except Exception` garante que um bug num pedido não derrube o agregador. Se o pedido tiver `"id"`, a resposta devolve o mesmo id.
+- **Validação**: `_mode`, `_product` e `_int` checam os campos e lançam `RequestError(code, message)`. Em `_int`, `isinstance(value, bool)` aparece porque em Python `True` é um `int`, e isso precisa ser rejeitado.
+- As operações:
+  - `search` executa e traduz para o formato do enunciado. O status sai `"sucesso"`, `"parcial"` (algum mercado falhou) ou `"erro"` (nenhum respondeu);
+  - `compare` roda os dois modos alternando a ordem e calcula o **speedup** = média sequencial ÷ média concorrente;
+  - `markets` e `configure` cuidam do status e da configuração dos mercados;
+  - `encerrar` só responde "conexão encerrada".
 
 ### [aggregator/display.py](../aggregator/display.py): o painel no terminal
 
@@ -370,7 +377,7 @@ Funções puras, sem rede.
 1. Instala handlers de `SIGINT`/`SIGTERM`/`SIGHUP` que lançam `KeyboardInterrupt`, para tratar tudo igual.
 2. Gera os bancos se faltar algum (`is_ready` / `seed_all`).
 3. Para cada mercado: `subprocess.Popen([sys.executable, "-m", "markets.aurora"], ..., start_new_session=True)`.
-   - `sys.executable` é o mesmo Python (o da `.venv`).
+   - `sys.executable` é o mesmo Python que rodou o `start.py` (o `python3.12`).
    - `start_new_session=True` faz o Ctrl+C do terminal chegar **só** ao `start.py`, que encerra os filhos na ordem certa.
    - Passa `LAUNCHER_PID` no ambiente, para o watchdog.
 4. `wait_port()` tenta conectar até a porta abrir.

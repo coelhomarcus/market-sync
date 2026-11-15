@@ -1,6 +1,6 @@
-"""Desenha os diagramas do relatório (casos de uso, arquitetura e sequência) com matplotlib.
+"""Desenha os diagramas do relatório (casos de uso, arquitetura e as duas sequências) com matplotlib.
 
-Uso: .venv/bin/python scripts/diagrams.py"""
+Uso: python3.12 scripts/diagrams.py"""
 
 from __future__ import annotations
 
@@ -157,24 +157,8 @@ def use_cases() -> None:
     plt.close(fig)
 
 
-def sequence() -> None:
-    fig, ax = plt.subplots(figsize=(13.5, 11.5))
-    ax.set_xlim(0, 13.5)
-    ax.set_ylim(0, 11.5)
-    ax.axis("off")
-    ax.text(0.2, 11.2, "Sequência de uma pesquisa concorrente (operação \"consultar\"), com um mercado fora do ar",
-            fontsize=14, fontweight="bold", color=TEXT_COLOR, va="center")
-
-    actors = [("Usuário", 0.8, 1.2), ("Cliente\n(python -m client)", 2.6, 1.6), ("Agregador\n(thread do cliente)", 4.8, 1.8),
-              ("Threads de consulta\n(threading.Thread)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("SuperVila\n:5002", 10.9, 1.3),
-              ("Ipê\n:5005", 12.6, 1.1)]
-    x = {name.split("\n")[0]: px for name, px, _ in actors}
-    top, base = 10.3, 0.3
-    for name, px, w in actors:
-        ax.add_patch(FancyBboxPatch((px - w / 2, top), w, 0.6, boxstyle="round,pad=0,rounding_size=0.08",
-                                    fc="white", ec=LINE_COLOR, lw=1.3))
-        ax.text(px, top + 0.3, name, ha="center", va="center", fontsize=9, fontweight="bold", color=TEXT_COLOR)
-        ax.plot([px, px], [base, top], color=LINE_COLOR, lw=1, ls=(0, (4, 3)), zorder=0)
+def sequence_tools(ax, x):
+    """Funções de desenho de um diagrama de sequência (mensagem, nota, ativação, bloco par/loop)."""
 
     def message_arrow(src, dst, y, text, color=TEXT_COLOR, ls="-", is_return=False, size=8.5, side="centro"):
         a, b = x[src], x[dst]
@@ -196,6 +180,33 @@ def sequence() -> None:
         ax.add_patch(Rectangle((x0, y0 - 0.32), 0.55, 0.32, fc="#efefef", ec="#8a8a8a", lw=1))
         ax.text(x0 + 0.27, y0 - 0.16, label, fontsize=8, fontweight="bold", ha="center", va="center")
         ax.text(x0 + 0.65, y0 - 0.16, text, fontsize=8, color=GRAY, va="center")
+
+    return message_arrow, note, activation, frame_box
+
+
+def lifelines(ax, actors, top, base):
+    """Caixas dos participantes no topo e as linhas tracejadas até embaixo; devolve {nome: x}."""
+    for name, px, w in actors:
+        ax.add_patch(FancyBboxPatch((px - w / 2, top), w, 0.6, boxstyle="round,pad=0,rounding_size=0.08",
+                                    fc="white", ec=LINE_COLOR, lw=1.3))
+        ax.text(px, top + 0.3, name, ha="center", va="center", fontsize=9, fontweight="bold", color=TEXT_COLOR)
+        ax.plot([px, px], [base, top], color=LINE_COLOR, lw=1, ls=(0, (4, 3)), zorder=0)
+    return {name.split("\n")[0]: px for name, px, _ in actors}
+
+
+def sequence() -> None:
+    fig, ax = plt.subplots(figsize=(13.5, 11.5))
+    ax.set_xlim(0, 13.5)
+    ax.set_ylim(0, 11.5)
+    ax.axis("off")
+    ax.text(0.2, 11.2, "Sequência de uma pesquisa concorrente (operação \"consultar\"), com um mercado fora do ar",
+            fontsize=14, fontweight="bold", color=TEXT_COLOR, va="center")
+
+    actors = [("Usuário", 0.8, 1.2), ("Cliente\n(python -m client)", 2.6, 1.6), ("Agregador\n(thread do cliente)", 4.8, 1.8),
+              ("Threads de consulta\n(threading.Thread)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("SuperVila\n:5002", 10.9, 1.3),
+              ("Ipê\n:5005", 12.6, 1.1)]
+    x = lifelines(ax, actors, top=10.3, base=0.3)
+    message_arrow, note, activation, frame_box = sequence_tools(ax, x)
 
     y = 9.9
     message_arrow("Usuário", "Cliente", y, "digita \"arroz\"")
@@ -248,9 +259,53 @@ def sequence() -> None:
     plt.close(fig)
 
 
+def sequence_sequential() -> None:
+    fig, ax = plt.subplots(figsize=(12, 9.3))
+    ax.set_xlim(0, 12)
+    ax.set_ylim(0, 9.3)
+    ax.axis("off")
+    ax.text(0.2, 9.0, "Sequência de uma pesquisa sequencial (operação \"consultar\", modo sequencial)",
+            fontsize=14, fontweight="bold", color=TEXT_COLOR, va="center")
+
+    actors = [("Usuário", 0.8, 1.2), ("Cliente\n(python -m client)", 2.6, 1.6), ("Agregador\n(thread do cliente)", 4.9, 1.8),
+              ("Aurora\n:5001", 7.3, 1.1), ("SuperVila\n:5002", 9.1, 1.3), ("Ipê\n:5005", 10.9, 1.1)]
+    x = lifelines(ax, actors, top=8.1, base=0.4)
+    message_arrow, note, activation, frame_box = sequence_tools(ax, x)
+
+    y = 7.7
+    message_arrow("Usuário", "Cliente", y, "/seq e digita \"arroz\"")
+    y -= 0.55
+    message_arrow("Cliente", "Agregador", y, "connect() → SYN, SYN-ACK, ACK (porta 5050)", color=GRAY)
+    activation(x["Agregador"], y, 0.95)
+    y -= 0.55
+    message_arrow("Cliente", "Agregador", y, '{"operacao":"consultar","produto":"arroz","modo":"sequencial"}\\n', color=BLUE)
+    y -= 0.5
+    note(x["Agregador"] + 0.6, y, "nenhuma thread nova: a própria thread do cliente faz as 5 consultas", w=4.9)
+
+    # bloco loop: um mercado de cada vez, cada um só começa depois da resposta do anterior
+    frame_box(3.7, 11.8, 5.75, 1.75, "loop", "um mercado de cada vez: só passa ao próximo depois da resposta")
+    steps = [("Aurora", 5.05, 0.45, "~300 ms"), ("SuperVila", 4.3, 0.65, "~500 ms"), ("Ipê", 2.95, 1.0, "~1200 ms")]
+    for i, (market, y_send, wait, latency) in enumerate(steps):
+        message_arrow("Agregador", market, y_send, '{"cmd":"SEARCH","q":"arroz"}\\n' if i == 0 else "SEARCH", color=BLUE, size=8)
+        activation(x[market], y_send, y_send - wait)
+        message_arrow(market, "Agregador", y_send - wait, "itens", is_return=True, size=8)
+        ax.text(x[market] + 0.15, y_send - wait / 2, latency, fontsize=8, color=GRAY, va="center")
+    ax.text((x["Agregador"] + x["Ipê"]) / 2, 3.3, "⋮  Empório Sol (~700 ms) e Max (~900 ms): igual, omitidos",
+            fontsize=8, color=GRAY, ha="center", va="center")
+
+    y = 1.4
+    message_arrow("Agregador", "Cliente", y, '{"status":"sucesso","resultados":[…],"tempo_total_ms":3650}', is_return=True, color=BLUE, size=8)
+    y -= 0.55
+    message_arrow("Cliente", "Usuário", y, "tabela de preços; total ≈ SOMA das latências (≈ 3,6 s)", is_return=True)
+
+    fig.savefig(FIGURES_DIR / "fig-13-sequencia-sequencial.png", dpi=110, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     use_cases()
     architecture()
     sequence()
-    print("ok: fig-01-casos-de-uso.png, fig-02-arquitetura.png, fig-12-sequencia.png")
+    sequence_sequential()
+    print("ok: fig-01-casos-de-uso.png, fig-02-arquitetura.png, fig-12-sequencia.png, fig-13-sequencia-sequencial.png")

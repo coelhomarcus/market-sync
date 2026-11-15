@@ -1,6 +1,6 @@
 """Servidor TCP do supermercado SuperVila: uma thread por conexão (ThreadingTCPServer).
 
-Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.supervila"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: python3.12 -m markets.supervila"""
 
 from __future__ import annotations
 

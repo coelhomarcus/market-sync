@@ -1,6 +1,6 @@
 """Interface de terminal do cliente: lê a pesquisa e mostra os preços.
 
-Uso: .venv/bin/python -m client [produto] [--mode seq|con] [--compare N] [--json]"""
+Uso: ./client.py [produto] [--mode seq|con] [--compare N] [--json]"""
 
 from __future__ import annotations
 
@@ -198,7 +198,7 @@ def main() -> int:
         client = AggregatorClient(args.host, args.port)
     except OSError as exc:
         print(f"Não consegui conectar ao agregador em {args.host}:{args.port}: {exc}\n"
-              "Ele está rodando? (.venv/bin/python start.py)", file=sys.stderr)
+              "Ele está rodando? (./start.py)", file=sys.stderr)
         return 1
 
     with client:

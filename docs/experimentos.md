@@ -4,10 +4,10 @@ Este documento cobre a seção 9 do enunciado: os cinco experimentos obrigatóri
 
 ## Como reproduzir
 
-Com o sistema no ar sem o painel (`.venv/bin/python start.py --quiet`), em outro terminal, da raiz do projeto:
+Com o sistema no ar sem o painel (`python3.12 start.py --quiet`), em outro terminal, da raiz do projeto:
 
 ```bash
-.venv/bin/python -m experiments
+python3.12 -m experiments
 ```
 
 O script leva cerca de 6 minutos e faz tudo pelo caminho real: **cliente → TCP → agregador → TCP → 5 mercados**. Ele usa a mesma classe do cliente de terminal (`AggregatorClient`), muda a latência e a disponibilidade dos mercados com a operação `configurar` (também por TCP) e, no fim, devolve os mercados à configuração padrão.
@@ -16,11 +16,11 @@ Cada experimento é um arquivo e também roda sozinho:
 
 | Experimento | Arquivo | Rodar sozinho |
 |---|---|---|
-| 1 — consulta sequencial | `experiments/exp1_sequential.py` | `.venv/bin/python -m experiments.exp1_sequential` |
-| 2 — consulta concorrente | `experiments/exp2_concurrent.py` | `.venv/bin/python -m experiments.exp2_concurrent` |
-| 3 — simulação de latência | `experiments/exp3_latency.py` | `.venv/bin/python -m experiments.exp3_latency` |
-| 4 — múltiplos clientes | `experiments/exp4_multiple_clients.py` | `.venv/bin/python -m experiments.exp4_multiple_clients` |
-| 5 — indisponibilidade | `experiments/exp5_unavailability.py` | `.venv/bin/python -m experiments.exp5_unavailability` |
+| 1 — consulta sequencial | `experiments/exp1_sequential.py` | `python3.12 -m experiments.exp1_sequential` |
+| 2 — consulta concorrente | `experiments/exp2_concurrent.py` | `python3.12 -m experiments.exp2_concurrent` |
+| 3 — simulação de latência | `experiments/exp3_latency.py` | `python3.12 -m experiments.exp3_latency` |
+| 4 — múltiplos clientes | `experiments/exp4_multiple_clients.py` | `python3.12 -m experiments.exp4_multiple_clients` |
+| 5 — indisponibilidade | `experiments/exp5_unavailability.py` | `python3.12 -m experiments.exp5_unavailability` |
 
 | Saída | Conteúdo |
 |---|---|

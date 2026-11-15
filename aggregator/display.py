@@ -273,7 +273,7 @@ class GraphicDisplay:
             width = bar_width(self.console.width)
             parts = [search_panel(p, width) for p in self.active.values()]
             if not parts and not self.log:
-                parts.append(Text("  aguardando pesquisas…  (em outro terminal: .venv/bin/python -m client)",
+                parts.append(Text("  aguardando pesquisas…  (em outro terminal: ./client.py)",
                                   style="grey50", no_wrap=True, overflow="ellipsis"))
             parts += [self._header(self.console.width - 1), self._status(self.console.width - 1)]
         return Group(*parts)

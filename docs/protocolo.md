@@ -30,7 +30,7 @@ Implementação: `common/protocol.py` (`send` e `receive`, usados pelos quatro l
 
 ## 2. Cliente ↔ agregador (porta 5050)
 
-Servidor: `aggregator/tcp_server.py`. Cliente: `client/connection.py` (classe `AggregatorClient`).
+Servidor: `aggregator/tcp_server.py` (TCP) e `aggregator/operations.py` (operações). Cliente: `client/connection.py` (classe `AggregatorClient`).
 
 ### Regras gerais
 

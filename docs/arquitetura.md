@@ -68,6 +68,7 @@ client/                  cliente de terminal
   terminal.py            comandos (/seq, /con, /compare, /markets…) e exibição
 aggregator/              o agregador
   tcp_server.py          servidor TCP da porta 5050: uma thread por cliente
+  operations.py          as operações do cliente (consultar, comparar, ...), sem socket
   aggregator.py          escolhe a estratégia, mede o tempo, STATUS/CONFIG dos mercados
   sequential.py          estratégia sequencial: um mercado de cada vez
   concurrent.py          estratégia concorrente: uma thread por mercado
@@ -100,7 +101,7 @@ scripts/                 diagramas e geração do relatório (DOCX/PDF)
 | `aggregator/concurrent.py` | `search()`: cria um `threading.Thread` por mercado (`thread_1` … `thread_5`); `start()` dispara todas, `join()` espera. |
 | `aggregator/aggregator.py` | `Aggregator.execute`: escolhe a estratégia (dicionário `STRATEGIES`), mede o tempo e avisa o painel. Também `markets_status` e `configure_market` (STATUS/CONFIG por TCP). |
 | `aggregator/consolidation.py` | Junta as ofertas dos cinco mercados por produto, ordena por preço e marca o menor. Funções puras, sem rede. |
-| `aggregator/tcp_server.py` | Servidor TCP do agregador (porta 5050): operações `consultar`, `comparar`, `mercados`, `configurar`, `encerrar`. Uma thread por cliente (`cliente-1`, `cliente-2`…). No Ctrl+C, espera as pesquisas em andamento. |
+| `aggregator/tcp_server.py` | Servidor TCP do agregador (porta 5050); as operações `consultar`, `comparar`, `mercados`, `configurar`, `encerrar` ficam em `operations.py`. Uma thread por cliente (`cliente-1`, `cliente-2`…). No Ctrl+C, espera as pesquisas em andamento. |
 | `aggregator/display.py` | Painel no terminal (Rich). Gráfico: um quadro por pesquisa, com uma barra por mercado que cresce ao vivo; os quadros terminados ficam no histórico rolável. Raw: uma linha por evento (connect com a porta local, envio, resposta, close, nova tentativa). `QUIET=1` desliga. |
 | `client/connection.py` | `AggregatorClient`: abre a conexão TCP com o agregador e a mantém durante a sessão. Reaproveitado pelos experimentos. |
 | `client/terminal.py` | Interface do cliente: pesquisa e os comandos `/seq`, `/con`, `/compare`, `/markets`, `/down`, `/up`, `/latency`, `/json`, `/help`, `/exit`. |
