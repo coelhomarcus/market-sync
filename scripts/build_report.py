@@ -1,17 +1,6 @@
 """Gera relatorio.docx e relatorio.pdf a partir do relatorio.md, usando o LibreOffice.
 
-Caminho: Markdown → HTML (figuras embutidas, capa) → LibreOffice → DOCX → PDF.
-O LibreOffice não lê Markdown, mas importa HTML no Writer; o PDF é exportado do
-próprio DOCX, então os dois ficam iguais.
-
-Uso (da raiz do projeto):
-    .venv/bin/python scripts/build_report.py
-    .venv/bin/python scripts/build_report.py --html   # também guarda o HTML intermediário
-
-Capa: edite docs/relatorio/capa.json (disciplina, professor, integrantes...).
-Precisa do LibreOffice instalado (soffice no PATH ou em /Applications/LibreOffice.app)
-e do pacote `markdown` (está no requirements.txt).
-"""
+Uso: .venv/bin/python scripts/build_report.py [--html]   (capa em docs/relatorio/capa.json)"""
 
 from __future__ import annotations
 

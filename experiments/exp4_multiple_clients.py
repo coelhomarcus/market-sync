@@ -1,11 +1,4 @@
-"""Experimento 4 — múltiplos clientes.
-
-De 1 a 32 clientes, cada um com a sua própria conexão TCP com o agregador, começando
-juntos (barreira) e fazendo 3 pesquisas seguidas. Mede o tempo de cada pesquisa e o
-tempo total do grupo (vazão = pesquisas ÷ tempo total). Gera a tabela e o gráfico fig-10.
-
-Rodar sozinho:  .venv/bin/python -m experiments.exp4_multiple_clients   (com o start.py --quiet no ar)
-"""
+"""Experimento 4: de 1 a 32 clientes ao mesmo tempo; mede o tempo de cada pesquisa e a vazão."""
 
 from __future__ import annotations
 

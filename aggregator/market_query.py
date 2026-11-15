@@ -1,12 +1,6 @@
-"""Cliente TCP do agregador: faz UMA pergunta a UM mercado e mede quanto demorou.
+"""Faz UMA consulta TCP a UM mercado e mede o tempo.
 
-Mercado fora do ar (conexão recusada ou fechada sem resposta)? Tenta de novo até
-RETRIES vezes, esperando cada vez mais: 0,5 s → 1 s → 2 s. Só então desiste.
-Timeout não é repetido: o mercado está lento, não caído, e já esperamos 3 s.
-
-Nunca lança exceção: uma falha vira MarketResult(ok=False) e a consulta aos
-outros mercados continua normalmente.
-"""
+Fora do ar? Tenta de novo (0,5 s → 1 s → 2 s). Nunca lança exceção: a falha vira ok=False."""
 
 from __future__ import annotations
 

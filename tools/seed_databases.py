@@ -1,16 +1,6 @@
-"""Gera o banco SQLite de cada supermercado (markets/<folder>/<id>.db).
+"""Gera o banco SQLite de cada supermercado, com sortimento, preço e estoque próprios.
 
-Ferramenta usada uma vez (o start.py chama sozinho se faltar algum banco). Os
-supermercados não importam este arquivo: em execução, cada um só lê o próprio .db.
-
-Cada mercado recebe o catálogo comum (≈1.700 SKUs) com:
-  * sortimento próprio: mercados menores deixam de vender parte dos SKUs;
-  * preço = preço base da marca × perfil da loja × variação aleatória (±12%);
-  * estoque aleatório (às vezes zerado) e um código de barras EAN-13 fictício.
-
-O gerador usa semente fixa por mercado: rodar de novo produz os mesmos dados.
-Uso (da raiz do projeto):  .venv/bin/python -m tools.seed_databases
-"""
+Uso: .venv/bin/python -m tools.seed_databases   (o start.py roda sozinho se faltar algum banco)"""
 
 from __future__ import annotations
 

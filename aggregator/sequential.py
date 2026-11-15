@@ -1,15 +1,6 @@
-"""Estratégia SEQUENCIAL: pergunta a um mercado, espera a resposta e só então passa ao próximo.
+"""Estratégia SEQUENCIAL: um mercado de cada vez, numa única thread.
 
-Tudo acontece numa única thread (a que está atendendo o cliente). Enquanto ela
-espera o mercado 1 responder, os outros 4 ficam parados esperando a vez.
-
-    Aurora    ███
-    SuperVila    █████
-    Empório         ███████
-    Max                    █████████
-    Ipê                             ████████████
-              └──── tempo total ≈ SOMA das latências (≈ 3,6 s) ────┘
-"""
+Tempo total ≈ a SOMA das latências (≈ 3,6 s)."""
 
 from __future__ import annotations
 

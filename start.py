@@ -1,15 +1,6 @@
-"""Sobe o sistema inteiro: 5 supermercados + o agregador, cada um num processo, todos servidores TCP.
+"""Sobe o sistema inteiro: 5 supermercados + o agregador, cada um no seu processo.
 
-Uso (da raiz do projeto):
-    .venv/bin/python start.py               # mostra cada pesquisa no terminal, ao vivo
-    .venv/bin/python start.py --raw         # versão crua: cada chamada TCP linha a linha, com as mensagens
-    .venv/bin/python start.py --quiet  # sem o log das pesquisas (bom para os experimentos)
-Ctrl+C encerra todos os processos.
-
-Este terminal vira o painel ao vivo do agregador (aggregator/display.py), com histórico rolável:
-cada pesquisa aparece como um quadro com uma barra por mercado. Cada supermercado grava
-o próprio log em logs/<id>.log (para ver: tail -f logs/aurora.log).
-"""
+Uso: .venv/bin/python start.py [--raw | --quiet]"""
 
 from __future__ import annotations
 

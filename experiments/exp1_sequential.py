@@ -1,10 +1,4 @@
-"""Experimento 1 — consulta sequencial.
-
-Consulta os 5 supermercados um após o outro e registra o tempo total, N vezes,
-com as latências padrão. Modelo: o tempo deve ficar perto da SOMA das latências.
-
-Rodar sozinho:  .venv/bin/python -m experiments.exp1_sequential   (com o start.py --quiet no ar)
-"""
+"""Experimento 1: consulta sequencial. Esperado: tempo ≈ SOMA das latências."""
 
 from __future__ import annotations
 

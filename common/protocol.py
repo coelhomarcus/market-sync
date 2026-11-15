@@ -1,15 +1,4 @@
-"""Protocolo entre agregador e mercados: uma mensagem JSON por linha.
-
-O TCP entrega um fluxo de bytes, sem separar mensagens. A regra aqui é simples:
-cada mensagem é um objeto JSON em UTF-8 terminado por '\\n'. O JSON nunca tem
-quebra de linha crua dentro dele, então a linha delimita a mensagem.
-
-    agregador → mercado:  {"cmd": "SEARCH", "q": "arroz"}\\n
-    mercado → agregador:  {"ok": true, "data": {...}, "cpu_ms": 1.2}\\n
-
-Os dois lados usam o socket como arquivo (`sock.makefile`), e `readline()`
-junta os pedaços que o TCP entregar até achar o '\\n'.
-"""
+"""Protocolo TCP do sistema: cada mensagem é um objeto JSON numa linha."""
 
 from __future__ import annotations
 

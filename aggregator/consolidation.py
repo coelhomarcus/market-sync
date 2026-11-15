@@ -1,7 +1,4 @@
-"""Junta as respostas dos mercados: menor preço e ordenação.
-
-Funções puras (sem rede): recebem a lista de MarketResult e montam o JSON da API.
-"""
+"""Junta as respostas dos mercados: agrupa, ordena e aponta o menor preço (sem rede)."""
 
 from __future__ import annotations
 

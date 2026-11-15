@@ -1,8 +1,4 @@
-"""O agregador: recebe uma pesquisa, consulta os mercados no modo escolhido e mede o tempo.
-
-Quem chama (tcp_server.py, a cada pedido de um cliente) só escolhe o modo;
-a diferença entre os modos está toda em sequential.py e concurrent.py. Cada passo é mostrado no terminal por display.py.
-"""
+"""Executa uma pesquisa no modo escolhido (sequencial ou concorrente) e mede o tempo."""
 
 from __future__ import annotations
 

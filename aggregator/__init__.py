@@ -1,2 +1,1 @@
-"""② AGREGADOR — recebe as pesquisas dos clientes, consulta os mercados (sequencial ou
-concorrente), junta e ordena os resultados. Comece por sequential.py e concurrent.py."""
+"""② AGREGADOR: recebe as pesquisas, consulta os mercados e junta os resultados."""

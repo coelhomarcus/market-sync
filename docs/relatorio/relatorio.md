@@ -8,7 +8,7 @@ Trabalho 1 de Sistemas Distribuídos — Engenharia de Requisitos e Desenvolvime
 
 Consultar cinco supermercados ao mesmo tempo, com uma thread por supermercado, reduziu o tempo de uma pesquisa de 3,65 s para 1,19 s: um speedup de 3,1×.
 
-Este relatório descreve um comparador de preços cliente-servidor desenvolvido em Python. Um **cliente de terminal** envia pesquisas a um **agregador** por socket TCP, com mensagens JSON no formato `{"operacao": "consultar", "produto": "arroz"}`. O agregador consulta cinco **supermercados**, cada um um processo independente com porta TCP, código e base SQLite próprios, de forma sequencial (um de cada vez) ou concorrente (`ThreadPoolExecutor`, uma thread por supermercado), consolida as ofertas, ordena por preço e aponta o menor. Toda a comunicação é TCP explícita, sem HTTP; o passo a passo de cada pesquisa (conexões, threads, tempos e falhas) aparece ao vivo no terminal do agregador.
+Este relatório descreve um comparador de preços cliente-servidor desenvolvido em Python. Um **cliente de terminal** envia pesquisas a um **agregador** por socket TCP, com mensagens JSON no formato `{"operacao": "consultar", "produto": "arroz"}`. O agregador consulta cinco **supermercados**, cada um um processo independente com porta TCP, código e base SQLite próprios, de forma sequencial (um de cada vez) ou concorrente (`threading.Thread`, uma thread por supermercado), consolida as ofertas, ordena por preço e aponta o menor. Toda a comunicação é TCP explícita, sem HTTP; o passo a passo de cada pesquisa (conexões, threads, tempos e falhas) aparece ao vivo no terminal do agregador.
 
 Os cinco experimentos obrigatórios, feitos de ponta a ponta pelo cliente TCP, confirmam o modelo esperado: o tempo sequencial se aproxima da soma das latências dos supermercados, e o concorrente, da maior delas. Com latências iguais o ganho chegou a 4,6×. Trinta e dois clientes simultâneos foram atendidos no mesmo tempo que um só, e um supermercado que cai durante a pesquisa não impede a resposta com os outros quatro.
 
@@ -78,7 +78,7 @@ A seção 2 resume os requisitos (o documento completo está em `docs/requisitos
 | ID | Requisito | Como é atendido |
 | --- | --- | --- |
 | RNF01 | A comunicação entre os componentes deverá usar sockets TCP. | Cliente → agregador na porta 5050; agregador → supermercados nas portas 5001–5005. Nenhum outro protocolo no caminho. |
-| RNF02 | A estratégia concorrente deverá usar threads. | `ThreadPoolExecutor` com uma thread por supermercado. |
+| RNF02 | A estratégia concorrente deverá usar threads. | `threading.Thread`, uma thread por supermercado. |
 | RNF03 | Os servidores deverão atender múltiplas conexões simultaneamente. | Agregador e supermercados com uma thread por conexão (`ThreadingTCPServer`). Experimento 4. |
 | RNF04 | O sistema deverá tratar falhas de comunicação. | Timeout de 3 s, até 3 novas tentativas com espera crescente, resultado parcial. Experimento 5. |
 | RNF05 | A aplicação deverá permitir experimentos de desempenho. | Latência configurável em tempo de execução; `experiments/`, um arquivo por experimento. |
@@ -183,7 +183,7 @@ No sequencial, as barras formam uma escada, sempre na mesma thread do agregador 
 - **Supermercado:** a thread principal fica em `accept()`; cada conexão aceita ganha uma thread, que lê a pergunta, consulta o SQLite e responde.
 - **Agregador, lado dos clientes:** a thread principal só faz `accept()` na porta 5050; cada cliente conectado ganha uma thread, que atende os pedidos dele um de cada vez até ele encerrar. Por isso dois clientes no modo sequencial são atendidos ao mesmo tempo: cada um tem sua thread, que faz a sua pesquisa sequencial.
 - **Agregador, modo sequencial:** a própria thread do cliente faz as cinco consultas, uma após a outra (1 thread).
-- **Agregador, modo concorrente:** a thread do cliente cria um `ThreadPoolExecutor` com cinco workers, um por supermercado (1 + 5 threads).
+- **Agregador, modo concorrente:** a thread do cliente cria cinco `threading.Thread`, uma por supermercado, dispara todas com `start()` e espera com `join()` (1 + 5 threads).
 - **Painel:** cada thread de consulta avisa o `display.py` quando conecta, recebe a resposta, tenta de novo ou desiste; esses eventos atualizam o estado do painel sob uma trava, e uma thread do painel redesenha as barras 12 vezes por segundo.
 
 ### 3.3 Diagrama de sequência
@@ -237,7 +237,7 @@ O protocolo completo, com exemplos de cada operação, está em `docs/protocolo.
 
 ## 4. Implementação
 
-A diferença entre os dois modos de consulta cabe em poucas linhas: um laço `for` no sequencial e um `ThreadPoolExecutor` no concorrente.
+A diferença entre os dois modos de consulta cabe em poucas linhas: um laço `for` no sequencial e cinco `threading.Thread` com `start()` e `join()` no concorrente.
 
 ### 4.1 Tecnologias
 
@@ -245,7 +245,7 @@ A diferença entre os dois modos de consulta cabe em poucas linhas: um laço `fo
 | --- | --- | --- |
 | Supermercados | Python 3.12, `socketserver`, `threading`, SQLite | Servidor TCP de cada supermercado e sua base |
 | Agregador | Python 3.12, `socketserver` | Servidor TCP dos clientes, consultas, consolidação e medições |
-| Concorrência | `concurrent.futures.ThreadPoolExecutor` | Uma thread por supermercado no modo concorrente |
+| Concorrência | `threading.Thread` | Uma thread por supermercado no modo concorrente |
 | Cliente | Python 3.12, `socket` | Cliente de terminal e experimentos |
 | Painel no terminal | Rich | Um quadro por pesquisa, com barras que crescem ao vivo, ou uma linha por evento (`--raw`) |
 | Experimentos | matplotlib | Gráficos |
@@ -281,15 +281,26 @@ def search(markets, request, emit=None, t0=None):
 
 # aggregator/concurrent.py
 def search(markets, request, emit=None, t0=None):
-    def query_one(number, market):
-        threading.current_thread().name = f"thread_{number}"  # thread_1 … thread_5, uma por mercado
-        return query_market(market, request, t0=t0, emit=emit)
+    results = [None] * len(markets)  # uma posição por mercado; cada thread só escreve na sua
 
-    with ThreadPoolExecutor(max_workers=len(markets)) as pool:
-        # submit() entrega cada consulta a uma thread nova e volta na hora, sem esperar a resposta
-        futures = [pool.submit(query_one, number, market) for number, market in enumerate(markets, 1)]
-        # result() espera cada thread terminar; o total é decidido pela mais lenta
-        return [future.result() for future in futures]
+    def query_one(position, market):  # o que cada thread faz
+        results[position] = query_market(market, request, t0=t0, emit=emit)
+
+    # 1. criar uma thread por mercado (thread_1 … thread_5)
+    threads = []
+    for position, market in enumerate(markets):
+        thread = threading.Thread(target=query_one, args=(position, market), name=f"thread_{position + 1}")
+        threads.append(thread)
+
+    # 2. start(): dispara todas; volta na hora, sem esperar a resposta do mercado
+    for thread in threads:
+        thread.start()
+
+    # 3. join(): só espera; as 5 já rodam juntas, então o total ≈ a mais lenta
+    for thread in threads:
+        thread.join()
+
+    return results
 ```
 
 `query_market` nunca lança exceção: timeout, conexão recusada e supermercado fora do ar viram um resultado com `ok = False` e o motivo. Assim, uma falha num supermercado não descarta as respostas dos outros.

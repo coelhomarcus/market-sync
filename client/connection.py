@@ -1,14 +1,4 @@
-"""Conexão do cliente com o agregador: um socket TCP e o protocolo JSON por linha.
-
-Abre UMA conexão TCP com o agregador (porta 5050) e a mantém aberta; cada
-pedido é uma linha JSON enviada e cada resposta uma linha JSON recebida
-(ver docs/protocolo.md, seção 2).
-
-    with AggregatorClient() as c:
-        r = c.search("arroz", mode="concorrente")
-
-Usada pela interface de terminal (client/terminal.py) e pelos experimentos.
-"""
+"""Conexão TCP do cliente com o agregador: envia um pedido JSON e recebe a resposta."""
 
 from __future__ import annotations
 

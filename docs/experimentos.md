@@ -172,5 +172,5 @@ O previsto limita cada latência ao timeout de 3 s.
 
 - Rodar os mercados em outras máquinas da rede (latência real em vez de simulada), trocando `MARKET_HOST`.
 - Aumentar os clientes até encontrar o limite do agregador (centenas de conexões).
-- Variar o número de mercados e o número de threads do pool, para ver o speedup crescer com cada fonte e cair quando faltam threads.
+- Variar o número de mercados e o número de threads, para ver o speedup crescer com cada fonte e cair quando faltam threads.
 - Comparar com uma versão `asyncio`, que atende muitas conexões numa única thread.

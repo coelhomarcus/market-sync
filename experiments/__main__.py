@@ -1,13 +1,6 @@
-"""Roda os experimentos obrigatórios e refaz tabelas e gráficos.
+"""Roda os 5 experimentos e refaz tabelas e gráficos (com o start.py --quiet no ar).
 
-Uso (da raiz do projeto, com o start.py --quiet rodando em outro terminal):
-    .venv/bin/python -m experiments                # mede os 5 (cerca de 6 minutos) e analisa
-    .venv/bin/python -m experiments --only 4 5     # mede só alguns e refaz a análise de todos
-    .venv/bin/python -m experiments --analyze      # só refaz tabelas e gráficos a partir dos CSV
-    .venv/bin/python -m experiments --quick        # poucas rodadas, para testar
-
-Cada experimento também roda sozinho, por exemplo:  .venv/bin/python -m experiments.exp3_latency
-"""
+Uso: .venv/bin/python -m experiments [--only 4 5] [--analyze] [--quick]"""
 
 import argparse
 import sys

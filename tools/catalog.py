@@ -1,13 +1,4 @@
-"""Catálogo de produtos comum a todos os mercados.
-
-O catálogo é gerado combinando:
-    tipo de produto (≈100)  ×  marca (10 por categoria)  ×  sabor/variante  ×  tamanho
-o que dá alguns milhares de SKUs, como num supermercado de verdade. As marcas são
-fictícias. (Os campos `image` e `image_query` vêm da versão com loja web, que mostrava
-uma foto por tipo; hoje não são usados.)
-
-Cada supermercado vende parte desse catálogo com preço e estoque próprios (ver seed_databases.py).
-"""
+"""Catálogo de produtos comum a todos os mercados (marcas fictícias, alguns milhares de SKUs)."""
 
 from __future__ import annotations
 

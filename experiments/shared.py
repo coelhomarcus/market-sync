@@ -1,9 +1,4 @@
-"""O que os cinco experimentos compartilham: caminhos, formatação, CSV, gráficos e acesso ao sistema.
-
-Cada experimento (exp1_… a exp5_…) tem duas funções:
-    measure(client, quick)  mede pelo cliente TCP e grava o CSV em docs/relatorio/dados/
-    analyze(md)             lê o CSV e gera a tabela (em md) e o gráfico (docs/relatorio/figuras/)
-"""
+"""O que os experimentos compartilham: cada um tem measure() (grava o CSV) e analyze() (tabela e gráfico)."""
 
 from __future__ import annotations
 

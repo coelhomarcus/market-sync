@@ -1,14 +1,6 @@
-"""Interface de terminal do cliente: lê o que o usuário digita e mostra os preços.
+"""Interface de terminal do cliente: lê a pesquisa e mostra os preços.
 
-Toda a conversa com o agregador passa por client/connection.py (socket TCP).
-
-Uso (da raiz do projeto, com o start.py rodando em outro terminal):
-    .venv/bin/python -m client                          # modo interativo
-    .venv/bin/python -m client arroz                    # uma pesquisa e sai
-    .venv/bin/python -m client "arroz 5 kg" --mode seq  # seq = sequencial, con = concorrente (padrão)
-    .venv/bin/python -m client cafe --compare 3         # sequencial × concorrente, 3 rodadas
-    .venv/bin/python -m client arroz --json             # mostra o JSON cru da resposta
-"""
+Uso: .venv/bin/python -m client [produto] [--mode seq|con] [--compare N] [--json]"""
 
 from __future__ import annotations
 

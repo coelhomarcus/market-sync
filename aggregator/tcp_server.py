@@ -1,27 +1,6 @@
-"""Servidor TCP do agregador: é por aqui que o cliente (pacote client/) faz as pesquisas.
+"""Servidor TCP do agregador (porta 5050): uma thread por cliente, uma mensagem JSON por linha.
 
-Usa o mesmo framing do protocolo com os mercados (uma mensagem JSON por linha,
-ver common/protocol.py), com as mensagens no formato sugerido pelo enunciado:
-
-    cliente → agregador:  {"operacao": "consultar", "produto": "arroz", "modo": "concorrente"}
-    agregador → cliente:  {"status": "sucesso", "operacao": "consultar", "produto": "arroz",
-                           "resultados": [{"produto": "Arroz Branco", "menor_preco": {...},
-                                           "ofertas": [{"fonte": "Max Atacarejo", "preco": 24.9, ...}]}], ...}
-
-Operações: consultar, comparar, mercados, configurar, encerrar (docs/protocolo.md).
-
-Uma conexão pode levar várias operações seguidas: o cliente de terminal mantém a
-conexão aberta durante a sessão. Ela termina quando o cliente envia
-{"operacao": "encerrar"}, quando fecha o socket ou depois de CLIENT_IDLE_TIMEOUT_S
-sem receber nada.
-
-ThreadingTCPServer: uma thread por cliente conectado, então vários clientes são
-atendidos ao mesmo tempo, e cada um deles ainda pode disparar 5 threads de consulta
-aos mercados (modo concorrente).
-
-Este é o processo do agregador: o start.py o sobe com  python -m aggregator.tcp_server
-No Ctrl+C, para de aceitar clientes e espera as pesquisas em andamento responderem.
-"""
+Operações: consultar, comparar, mercados, configurar, encerrar (docs/protocolo.md)."""
 
 from __future__ import annotations
 

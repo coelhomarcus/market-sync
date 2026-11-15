@@ -63,7 +63,7 @@ Permitir que o usuário informe um produto e receba, em uma única resposta, os 
 | ID | Categoria | Requisito | Como é atendido |
 |---|---|---|---|
 | RNF01 | Comunicação | A comunicação entre cliente, agregador e supermercados deverá usar sockets TCP. | Cliente → agregador: porta 5050. Agregador → supermercados: portas 5001–5005. `socket.create_connection` nos clientes, `socketserver.ThreadingTCPServer` nos servidores. Não há HTTP nem outro protocolo no caminho. |
-| RNF02 | Concorrência | A estratégia concorrente deverá usar threads. | `ThreadPoolExecutor` com uma thread por supermercado (`thread_1` … `thread_5`). |
+| RNF02 | Concorrência | A estratégia concorrente deverá usar threads. | `threading.Thread`, uma thread por supermercado (`thread_1` … `thread_5`). |
 | RNF03 | Escalabilidade | Os servidores deverão atender múltiplas conexões simultaneamente. | Agregador: uma thread por cliente TCP. Supermercado: uma thread por conexão (`conexão nº N`). Medido no Experimento 4. |
 | RNF04 | Confiabilidade | O sistema deverá tratar falhas de comunicação sem derrubar a pesquisa. | Timeout de 3 s por supermercado; até 3 novas tentativas (0,5 s → 1 s → 2 s) quando a conexão é recusada ou fechada sem resposta; resultado parcial com o erro de cada supermercado. Medido no Experimento 5. |
 | RNF05 | Mensurabilidade | A aplicação deverá permitir experimentos de desempenho reproduzíveis. | Latência configurável em tempo de execução, `experiments/` (um arquivo por experimento), CSV com os dados brutos. |

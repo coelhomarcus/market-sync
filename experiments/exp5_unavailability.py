@@ -1,12 +1,4 @@
-"""Experimento 5 — indisponibilidade de serviço.
-
-Desativa a SuperVila (a segunda da lista, 500 ms) e observa o tratamento da falha, em quatro cenários:
-antes da pesquisa, 0,3 s depois do início (com a consulta já em andamento) e "cai e volta".
-A desativação vai por uma segunda conexão TCP ("configurar" com online=false), enquanto
-a primeira espera a resposta da pesquisa. Gera a tabela e o gráfico fig-11 (barras no tempo).
-
-Rodar sozinho:  .venv/bin/python -m experiments.exp5_unavailability   (com o start.py --quiet no ar)
-"""
+"""Experimento 5: derruba a SuperVila em quatro cenários e observa o tratamento da falha."""
 
 from __future__ import annotations
 

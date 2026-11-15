@@ -1,10 +1,4 @@
-"""Experimento 3 — simulação de latência.
-
-Configura atrasos artificiais nos supermercados (operação "configurar", por TCP) e
-compara os dois modos em cada cenário. Gera a tabela e o gráfico fig-09.
-
-Rodar sozinho:  .venv/bin/python -m experiments.exp3_latency   (com o start.py --quiet no ar)
-"""
+"""Experimento 3: muda a latência dos mercados e compara os dois modos em cada cenário."""
 
 from __future__ import annotations
 

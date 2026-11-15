@@ -97,7 +97,7 @@ scripts/                 diagramas e geração do relatório (DOCX/PDF)
 | `markets/<mercado>/server.py` | Servidor TCP de um mercado (`socketserver.ThreadingTCPServer`): cada conexão é atendida por uma thread nova (`conexão nº N`). Simula latência e queda; devolve em cada resposta qual conexão atendeu; grava uma linha por consulta em `logs/<mercado>.log`. |
 | `aggregator/market_query.py` | `query_market`: conecta, envia, espera a resposta e mede. Se o mercado está fora do ar, tenta de novo (0,5 s → 1 s → 2 s). Nunca lança exceção. |
 | `aggregator/sequential.py` | `search()`: um laço `for` na thread do próprio pedido (`thread_1`); pergunta a um mercado, espera, passa ao próximo. |
-| `aggregator/concurrent.py` | `search()`: `ThreadPoolExecutor` com uma thread por mercado (`thread_1` … `thread_5`); `submit` dispara todas, `result` espera. |
+| `aggregator/concurrent.py` | `search()`: cria um `threading.Thread` por mercado (`thread_1` … `thread_5`); `start()` dispara todas, `join()` espera. |
 | `aggregator/aggregator.py` | `Aggregator.execute`: escolhe a estratégia (dicionário `STRATEGIES`), mede o tempo e avisa o painel. Também `markets_status` e `configure_market` (STATUS/CONFIG por TCP). |
 | `aggregator/consolidation.py` | Junta as ofertas dos cinco mercados por produto, ordena por preço e marca o menor. Funções puras, sem rede. |
 | `aggregator/tcp_server.py` | Servidor TCP do agregador (porta 5050): operações `consultar`, `comparar`, `mercados`, `configurar`, `encerrar`. Uma thread por cliente (`cliente-1`, `cliente-2`…). No Ctrl+C, espera as pesquisas em andamento. |
@@ -122,7 +122,7 @@ flowchart TB
         TA[thread principal<br/>accept na porta 5050]
         C1[cliente-1]
         C2[cliente-2]
-        TP[ThreadPoolExecutor<br/>thread_1 … thread_5]
+        TP[threading.Thread<br/>thread_1 … thread_5]
     end
     subgraph "Cada mercado"
         AC[thread principal<br/>accept]
@@ -138,7 +138,7 @@ flowchart TB
 
 - A thread principal do agregador só faz `accept()`. Cada cliente conectado ganha uma thread (`cliente-1`, `cliente-2`…), que lê os pedidos daquele cliente, um por vez, até ele encerrar. Por isso dois clientes no modo sequencial são atendidos ao mesmo tempo: cada um tem a sua thread, e cada thread faz a sua pesquisa sequencial (Experimento 4).
 - No **modo sequencial**, a própria thread do pedido (renomeada `thread_1`) faz as 5 consultas em sequência; o painel mostra uma escada de barras, sempre a mesma thread, e "1 thread: a do próprio pedido" no rodapé.
-- No **modo concorrente**, a thread do pedido cria um `ThreadPoolExecutor` com 5 workers (`thread_1` a `thread_5`), dispara as 5 consultas com `submit` e espera os resultados; o painel mostra as 5 barras saindo juntas e "5 threads novas; o pedido só espera" no rodapé.
+- No **modo concorrente**, a thread do pedido cria 5 `threading.Thread` (`thread_1` a `thread_5`), dispara as 5 consultas com `start()` e espera com `join()`; o painel mostra as 5 barras saindo juntas e "5 threads novas; o pedido só espera" no rodapé.
 - Os eventos de cada consulta chegam ao `display.py` direto da thread que os gerou e atualizam o estado do painel sob uma trava (`threading.RLock`); uma thread do painel redesenha a parte ao vivo 12 vezes por segundo a partir desse estado. Quando a pesquisa termina, o quadro final vai para o histórico do terminal.
 - No mercado, o `accept()` roda na thread principal e cada conexão ganha uma thread (`conexão nº 7`, que o mercado devolve na resposta e o painel mostra ao lado da thread do agregador). Assim, o mercado atende consultas simultâneas de vários clientes. O SQLite abre uma conexão por requisição, porque o objeto de conexão não pode ser compartilhado entre threads.
 

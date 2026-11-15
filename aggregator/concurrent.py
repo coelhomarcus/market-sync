@@ -1,21 +1,11 @@
-"""Estratégia CONCORRENTE: cria uma thread por mercado e pergunta a todos ao mesmo tempo.
+"""Estratégia CONCORRENTE: uma thread por mercado, todas ao mesmo tempo.
 
-Cada thread do pool abre a sua conexão TCP e fica esperando o seu mercado.
-Enquanto uma thread está parada no recv(), ela libera o GIL e as outras seguem.
-
-    Aurora    ███
-    SuperVila █████
-    Empório   ███████
-    Max       █████████
-    Ipê       ████████████
-              └ tempo total ≈ a MAIOR latência (≈ 1,2 s) ┘
-"""
+Tempo total ≈ a MAIOR latência (≈ 1,2 s)."""
 
 from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 from common.config import MarketInfo
 
@@ -26,12 +16,25 @@ def search(markets: list[MarketInfo], request: dict, emit: Emit | None = None, t
     """Consulta todos os mercados ao mesmo tempo, uma thread para cada um."""
     t0 = time.perf_counter() if t0 is None else t0
 
-    def query_one(number: int, market: MarketInfo) -> MarketResult:
-        threading.current_thread().name = f"thread_{number}"  # thread_1 … thread_5, uma por mercado
-        return query_market(market, request, t0=t0, emit=emit)
+    # uma posição por mercado; cada thread só escreve na sua, então não precisa de lock
+    results = [None] * len(markets)
 
-    with ThreadPoolExecutor(max_workers=len(markets)) as pool:
-        # submit() entrega cada consulta a uma thread nova e volta na hora, sem esperar a resposta
-        futures = [pool.submit(query_one, number, market) for number, market in enumerate(markets, start=1)]
-        # result() faz a thread do pedido esperar cada uma terminar; o total é decidido pela mais lenta
-        return [future.result() for future in futures]
+    def query_one(position: int, market: MarketInfo) -> None:
+        """O que cada thread faz: consulta UM mercado e guarda a resposta na sua posição."""
+        results[position] = query_market(market, request, t0=t0, emit=emit)
+
+    # 1. criar uma thread por mercado (ainda não começaram a rodar)
+    threads = []
+    for position, market in enumerate(markets):
+        thread = threading.Thread(target=query_one, args=(position, market), name=f"thread_{position + 1}")
+        threads.append(thread)
+
+    # 2. start(): dispara todas. Volta na hora, sem esperar a resposta do mercado
+    for thread in threads:
+        thread.start()
+
+    # 3. join(): só espera; as 5 já rodam juntas, então o total ≈ a mais lenta
+    for thread in threads:
+        thread.join()
+
+    return results

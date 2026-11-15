@@ -1,11 +1,4 @@
-"""Encerra este processo se o start.py morrer, para não sobrar servidor órfão segurando a porta.
-
-O start.py sobe cada servidor numa sessão própria (assim o Ctrl+C do terminal chega só
-a ele, que encerra tudo na ordem certa). O efeito colateral: se o start.py morrer sem
-conseguir limpar (aba do terminal fechada, kill -9), os filhos continuariam rodando.
-Esta thread confere a cada segundo se o pai ainda é o start.py; se não for, encerra o
-processo como num Ctrl+C. Rodando um servidor sozinho (sem o start.py), não faz nada.
-"""
+"""Encerra este processo se o start.py morrer, para não sobrar servidor órfão segurando a porta."""
 
 from __future__ import annotations
 

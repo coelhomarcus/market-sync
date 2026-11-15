@@ -1,8 +1,6 @@
-"""Desenha os diagramas de modelagem do relatório (casos de uso, arquitetura e sequência) com matplotlib.
+"""Desenha os diagramas do relatório (casos de uso, arquitetura e sequência) com matplotlib.
 
-Uso (da raiz do projeto):  .venv/bin/python scripts/diagrams.py
-Gera docs/relatorio/figuras/fig-01-casos-de-uso.png, fig-02-arquitetura.png e fig-12-sequencia.png.
-"""
+Uso: .venv/bin/python scripts/diagrams.py"""
 
 from __future__ import annotations
 
@@ -168,7 +166,7 @@ def sequence() -> None:
             fontsize=14, fontweight="bold", color=TEXT_COLOR, va="center")
 
     actors = [("Usuário", 0.8, 1.2), ("Cliente\n(python -m client)", 2.6, 1.6), ("Agregador\n(thread do cliente)", 4.8, 1.8),
-              ("Threads de consulta\n(ThreadPoolExecutor)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("SuperVila\n:5002", 10.9, 1.3),
+              ("Threads de consulta\n(threading.Thread)", 7.1, 2.1), ("Aurora\n:5001", 9.3, 1.1), ("SuperVila\n:5002", 10.9, 1.3),
               ("Ipê\n:5005", 12.6, 1.1)]
     x = {name.split("\n")[0]: px for name, px, _ in actors}
     top, base = 10.3, 0.3

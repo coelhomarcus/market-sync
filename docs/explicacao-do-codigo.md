@@ -253,16 +253,31 @@ Usa uma única thread e um mercado por vez. **Tempo total ≈ soma das latência
 ### [aggregator/concurrent.py](../aggregator/concurrent.py): estratégia concorrente
 
 ```python
-with ThreadPoolExecutor(max_workers=len(markets)) as pool:
-    futures = [pool.submit(query_one, n, m) for n, m in enumerate(markets, start=1)]
-    return [f.result() for f in futures]
+results = [None] * len(markets)          # uma posição por mercado
+
+def query_one(position, market):         # o que cada thread faz
+    results[position] = query_market(market, request, ...)
+
+threads = []                             # 1. criar uma thread por mercado
+for position, market in enumerate(markets):
+    threads.append(threading.Thread(target=query_one, args=(position, market), name=f"thread_{position + 1}"))
+
+for thread in threads:                   # 2. start(): dispara todas, volta na hora
+    thread.start()
+
+for thread in threads:                   # 3. join(): espera todas terminarem
+    thread.join()
+
+return results
 ```
 
-- `submit()` entrega a função para uma thread do pool e **volta na hora**, devolvendo um `Future`, que é a "promessa" do resultado.
-- `f.result()` espera aquele Future terminar.
+- `threading.Thread(target=..., args=...)` só **cria** a thread; ela ainda não roda.
+- `start()` coloca a thread para rodar e **volta na hora**, sem esperar a resposta do mercado. Depois do segundo laço, as 5 consultas estão em andamento ao mesmo tempo.
+- `join()` só **espera**, não dispara nada: quando o laço do `join()` começa, as 5 consultas já estão rodando juntas. O laço é em ordem, mas isso não deixa a consulta sequencial: enquanto a thread do pedido espera a `thread_1` (Aurora, 300 ms), as outras continuam consultando os seus mercados. Quando chega a vez delas, várias já terminaram e o `join()` volta na hora. A espera total é a da thread mais lenta (Ipê, ≈ 1,2 s), e não a soma.
+- Cada thread escreve só na sua posição de `results`, por isso não é preciso `Lock`. A lista volta na mesma ordem de `markets`.
 - Os 5 mercados são consultados ao mesmo tempo. **Tempo total ≈ a maior latência** (≈ 1,2 s).
 - **Por que threads funcionam aqui, apesar do GIL?** Enquanto uma thread está bloqueada em I/O de rede (`recv`), ela **libera o GIL** e as outras rodam. O trabalho é limitado por I/O, não por CPU.
-- `enumerate(markets, start=1)` produz os pares `(1, aurora), (2, supervila), ...`.
+- `enumerate(markets)` produz os pares `(0, aurora), (1, supervila), ...`; o nome da thread soma 1 (`thread_1` … `thread_5`).
 
 ### [aggregator/aggregator.py](../aggregator/aggregator.py): a classe `Aggregator`
 

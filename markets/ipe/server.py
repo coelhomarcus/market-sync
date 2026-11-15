@@ -1,20 +1,6 @@
-"""Servidor TCP do supermercado Mercadinho Ipê: um serviço independente, com processo, porta e banco próprios.
+"""Servidor TCP do supermercado Mercadinho Ipê: uma thread por conexão (ThreadingTCPServer).
 
-Rodar sozinho (da raiz do projeto):  .venv/bin/python -m markets.ipe
-
-Usa o `socketserver` da biblioteca padrão, que cuida do ciclo socket() → bind() → listen() → accept():
-
-  * ServidorMercado (ThreadingTCPServer) aceita as conexões e cria UMA THREAD POR CONEXÃO;
-  * AtendeConexao.handle() roda dentro dessa thread: lê o pedido, responde e fecha.
-
-Pedidos (uma linha JSON cada, ver common/protocol.py):
-    SEARCH  {"q": "arroz"}                         produtos que casam com a busca
-    STATUS                                         situação do mercado (responde mesmo fora do ar)
-    CONFIG  {"latency_ms": 800, "online": false}   muda a simulação (operação "configurar" do cliente)
-
-O código das cinco pastas de supermercados é o mesmo, de propósito: cada uma é um serviço
-que poderia rodar em outra máquina. Só mudam os dados abaixo e o arquivo de banco.
-"""
+Pedidos: SEARCH, STATUS e CONFIG. Rodar sozinho: .venv/bin/python -m markets.ipe"""
 
 from __future__ import annotations
 

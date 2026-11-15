@@ -1,32 +1,6 @@
-"""Painel ao vivo no terminal do agregador: cada pesquisa vira um quadro com uma barra por mercado.
+"""Painel ao vivo do agregador no terminal: um quadro por pesquisa, uma barra por mercado.
 
-As consultas rodam em threads diferentes; cada uma chama `event()` quando conecta,
-recebe a resposta, tenta de novo ou desiste. O painel (biblioteca Rich) redesenha
-as barras 12 vezes por segundo, então dá para VER a diferença entre os modos:
-
-    sequencial                                    concorrente
-    Aurora     ███                                Aurora     ███
-    SuperVila     █████                           SuperVila  █████
-    Empório            ███████                    Empório    ███████
-    Max                       █████████           Max        █████████
-    Ipê                                ████████   Ipê        ████████████
-               └ escada: tempo ≈ soma ┘                      └ juntas: tempo ≈ maior ┘
-
-Todas as barras usam a mesma escala (no mínimo 4 s), para os quadros serem comparáveis.
-As pesquisas terminadas (de todos os clientes) e os avisos ficam no histórico do terminal,
-a mais recente embaixo; dá para rolar até a primeira. Embaixo de tudo fica a parte ao vivo:
-as pesquisas em andamento, os mercados e os clientes. Redimensionar a janela redesenha tudo.
-
-Fora de um terminal (testes, logs redirecionados) só os quadros finais são impressos.
-
-Dois modos (start.py escolhe):
-    gráfico (padrão)      o painel acima, com barras
-    raw (start.py --raw)  uma linha por acontecimento: pedido do cliente, connect TCP
-                          (com a porta local), mensagem enviada, resposta recebida, close,
-                          novas tentativas e a resposta devolvida ao cliente
-
-Silenciar (por exemplo, durante os experimentos):  QUIET=1 ou  start.py --quiet
-"""
+Modos: gráfico (padrão) ou raw (start.py --raw, uma linha por evento). Silenciar: start.py --quiet."""
 
 from __future__ import annotations
 
@@ -300,32 +274,54 @@ class GraphicDisplay:
             parts = [search_panel(p, width) for p in self.active.values()]
             if not parts and not self.log:
                 parts.append(Text("  aguardando pesquisas…  (em outro terminal: .venv/bin/python -m client)",
-                                  style="grey50"))
-            parts += [self._header(), self._status()]
+                                  style="grey50", no_wrap=True, overflow="ellipsis"))
+            parts += [self._header(self.console.width - 1), self._status(self.console.width - 1)]
         return Group(*parts)
 
-    def _header(self) -> Text:
-        if self.closing:
-            hint = (f"   encerrando: esperando {len(self.active)} pesquisa(s) terminar(em)", "bold yellow3")
-        else:
-            hint = ("   Ctrl+C encerra · role para ver o histórico", "grey42")
-        return Text.assemble((" Comparador de Preços ", "bold reverse"), "  agregador :5050 · painel gráfico", hint,
-                             no_wrap=True, overflow="ellipsis")
+    def _header(self, max_width: int) -> Text:
+        """Título + porta + contadores (+ o aviso de encerramento depois do Ctrl+C).
 
-    def _status(self) -> Text:
-        t = Text(" mercados ", style="reverse", no_wrap=True, overflow="ellipsis")
-        for mid, m in self.markets.items():
-            info = MARKETS_BY_ID[mid]
-            t.append("  ● " if m["online"] else "  ○ ", style="green3" if m["online"] else "red3")
-            t.append(info.short, style="" if m["online"] else "red3")
-            t.append(f" {m['latencia']}ms" if m["online"] else " fora do ar", style="grey50" if m["online"] else "red3")
-        t.append("   clientes ", style="grey50")
-        t.append(str(self.clients), style="bold")
-        t.append(" · pesquisas ", style="grey50")
-        t.append(str(self.served), style="bold")
-        if self.active:
-            t.append(f" · {len(self.active)} em andamento", style="grey50")
-        return t
+        Num terminal estreito o título encurta para "Comparador"; o que ainda não couber é cortado com …"""
+        def plural(n: int, word: str) -> str:
+            return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+        for title in (" Comparador de Preços ", " Comparador "):
+            line = Text(title, style="bold reverse", no_wrap=True, overflow="ellipsis")
+            line.append(f"  :5050 · {plural(self.clients, 'cliente')} · {plural(self.served, 'pesquisa')}", style="grey62")
+            if self.active:
+                line.append(f" · {len(self.active)} em andamento", style="grey62")
+            if self.closing:
+                line.append(f"  encerrando: aguardando {len(self.active)} pesquisa(s)", style="bold yellow3")
+            if line.cell_len <= max_width:
+                break
+        return line
+
+    def _status(self, max_width: int) -> Text:
+        """Uma linha com os mercados, no nível de detalhe que couber na largura:
+            ● Aurora 300  ● SuperVila 500  …  ● Ipê 1200 ms     (nome + latência)
+            ● Aurora  ● SuperVila  …  ● Ipê                      (só o nome)
+            ● A  ● S  ● E  ● M  ● I                              (só a inicial)
+        """
+        def build(detail: str) -> Text:
+            t = Text(no_wrap=True, overflow="ellipsis")
+            for i, (mid, m) in enumerate(self.markets.items()):
+                info = MARKETS_BY_ID[mid]
+                online = m["online"]
+                name = info.short if detail != "initial" else info.short[0]
+                t.append(" " if i == 0 else "  ")
+                t.append("● " if online else "○ ", style="green3" if online else "red3")
+                t.append(name, style="" if online else "red3")
+                if detail == "full":
+                    t.append(f" {m['latencia']}" if online else " fora", style="grey50" if online else "red3")
+            if detail == "full":
+                t.append(" ms", style="grey42")
+            return t
+
+        for detail in ("full", "name"):
+            line = build(detail)
+            if line.cell_len <= max_width:
+                return line
+        return build("initial")
 
     # -- eventos (chamados de qualquer thread)
     def event(self, kind: str, d: dict) -> None:

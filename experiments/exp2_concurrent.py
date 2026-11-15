@@ -1,11 +1,4 @@
-"""Experimento 2 — consulta concorrente.
-
-Consulta os 5 supermercados ao mesmo tempo (uma thread por supermercado) e registra
-o tempo total, N vezes, com as latências padrão. Modelo: o tempo deve ficar perto da
-MAIOR latência. A análise também compara com o Experimento 1 (tabela, speedup e fig-08).
-
-Rodar sozinho:  .venv/bin/python -m experiments.exp2_concurrent   (com o start.py --quiet no ar)
-"""
+"""Experimento 2: consulta concorrente. Esperado: tempo ≈ MAIOR latência; compara com o 1."""
 
 from __future__ import annotations
 
