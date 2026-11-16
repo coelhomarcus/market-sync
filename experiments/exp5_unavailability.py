@@ -26,7 +26,12 @@ def measure(client, quick: bool = False) -> None:
     from client.connection import AggregatorClient
 
     rounds = 1 if quick else 3
-    c.log(f"\nExperimento 5: indisponibilidade de serviço, alvo {TARGET_NAME} ({rounds} rodadas por cenário)")
+    c.header(5, "indisponibilidade de serviço",
+             f"tirar a {TARGET_NAME} do ar em {len(SCENARIOS)} cenários, {rounds} rodada(s) de cada modo.",
+             "a pesquisa nunca falha: o agregador tenta de novo (0,5 s, 1 s, 2 s) e responde com os outros 4.")
+    for scenario, desc in SCENARIOS:
+        c.log(f"    {scenario:<17} {desc}")
+    c.log("")
     c.configure_all(client)
 
     def go_down(admin):
@@ -69,6 +74,14 @@ def measure(client, quick: bool = False) -> None:
                 c.log(f"  {scenario:<16} {mode:<11} rodada {i + 1}: {c.fmt_s(r['tempo_total_ms']):>8} · "
                       f"{c.ok_count(r)}/5 mercados · {TARGET_NAME}: {target['tentativas']} tentativa(s)")
     c.configure_all(client)
+    table = [f"{'cenário':<17} {'sequencial':>10}  {'concorrente':>11}  mercados com resposta"]
+    for scenario, _ in SCENARIOS:
+        group = [row for row in rows if row[0] == scenario]
+        seq, conc = (c.mean([row[3] for row in group if row[1] == m]) for m in c.MODES)
+        table.append(f"{scenario:<17} {c.fmt_s(seq):>10}  {c.fmt_s(conc):>11}  {min(row[4] for row in group)} de 5")
+    c.result("com a SuperVila fora, a resposta chega com os outros 4 (status parcial)",
+             "no sequencial a espera das tentativas atrasa os mercados seguintes; no concorrente, não",
+             table=table)
     c.save_csv(CSV, ["cenario", "modo", "rodada", "tempo_ms", "mercados_ok", "status_alvo", "tentativas_alvo",
                      "inicio_alvo_ms", "fim_alvo_ms", "erro_alvo"], rows)
     c.save_csv(CSV_TIMELINE, ["modo", "mercado", "fonte", "inicio_ms", "fim_ms", "status", "tentativas", "erro",

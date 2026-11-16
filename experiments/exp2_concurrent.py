@@ -11,13 +11,25 @@ CSV = "exp2-concorrente.csv"
 
 def measure(client, quick: bool = False) -> None:
     rounds = 3 if quick else 10
-    c.log(f"\nExperimento 2: {rounds} pesquisas concorrentes por '{c.PRODUCT}', latências padrão")
+    total, largest = c.expected(c.DEFAULT_LATENCIES)
+    c.header(2, "consulta concorrente",
+             f"{rounds} pesquisas por '{c.PRODUCT}', uma thread por mercado, todas ao mesmo tempo.",
+             f"tempo ≈ MAIOR latência ({c.fmt_s(largest)}), contra {c.fmt_s(total)} do sequencial.")
     c.configure_all(client)
     rows = []
     for i in range(rounds):
         r = c.run_search(client, "concorrente")
         rows.append([i + 1, r["tempo_total_ms"], r["tempo_cliente_ms"], c.ok_count(r)])
-        c.log(f"  rodada {i + 1}: {c.fmt_s(r['tempo_total_ms'])}")
+        c.log(f"  rodada {i + 1}: {c.fmt_s(r['tempo_total_ms']):>8} · {c.ok_count(r)}/5 mercados")
+    times = [row[1] for row in rows]
+    lines = [f"média {c.fmt_s(c.mean(times))} (mín. {c.fmt_s(min(times))}, máx. {c.fmt_s(max(times))})",
+             f"previsto pela maior latência: {c.fmt_s(largest)}"]
+    sequential = exp1_sequential.times()
+    if sequential:  # compara com o último CSV do Experimento 1
+        seq = c.mean(sequential[0])
+        lines.append(f"sequencial (Exp. 1): {c.fmt_s(seq)} → speedup {c.fmt_x(seq / c.mean(times))}")
+    lines.append("as 5 esperas acontecem juntas: a pesquisa só espera o mercado mais lento")
+    c.result(*lines)
     c.save_csv(CSV, ["rodada", "tempo_agregador_ms", "tempo_cliente_ms", "mercados_ok"], rows)
 
 

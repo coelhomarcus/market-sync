@@ -10,13 +10,20 @@ CSV = "exp1-sequencial.csv"
 
 def measure(client, quick: bool = False) -> None:
     rounds = 3 if quick else 10
-    c.log(f"\nExperimento 1: {rounds} pesquisas sequenciais por '{c.PRODUCT}', latências padrão")
+    total, _ = c.expected(c.DEFAULT_LATENCIES)
+    c.header(1, "consulta sequencial",
+             f"{rounds} pesquisas por '{c.PRODUCT}', um mercado de cada vez, numa única thread.",
+             f"tempo ≈ SOMA das latências ({c.latency_sum_text()} = {c.fmt_s(total)}).")
     c.configure_all(client)
     rows = []
     for i in range(rounds):
         r = c.run_search(client, "sequencial")
         rows.append([i + 1, r["tempo_total_ms"], r["tempo_cliente_ms"], c.ok_count(r)])
-        c.log(f"  rodada {i + 1}: {c.fmt_s(r['tempo_total_ms'])}")
+        c.log(f"  rodada {i + 1}: {c.fmt_s(r['tempo_total_ms']):>8} · {c.ok_count(r)}/5 mercados")
+    times = [row[1] for row in rows]
+    c.result(f"média {c.fmt_s(c.mean(times))} (mín. {c.fmt_s(min(times))}, máx. {c.fmt_s(max(times))})",
+             f"previsto pela soma das latências: {c.fmt_s(total)}",
+             "cada mercado só é consultado depois que o anterior responde: as esperas se somam")
     c.save_csv(CSV, ["rodada", "tempo_agregador_ms", "tempo_cliente_ms", "mercados_ok"], rows)
 
 

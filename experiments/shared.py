@@ -29,6 +29,28 @@ def log(text: str) -> None:
     print(text, flush=True)
 
 
+def header(number: int, title: str, goal: str, expect: str) -> None:
+    """Cabeçalho de um experimento no terminal: o que ele faz e o que se espera ver."""
+    log(f"\n{'═' * 72}\n Experimento {number} — {title}\n{'═' * 72}")
+    log(f"  Objetivo: {goal}")
+    log(f"  Esperado: {expect}\n")
+
+
+def result(*lines: str, table: list[str] | None = None) -> None:
+    """Resumo no fim de um experimento: uma tabela opcional e as conclusões."""
+    log("\n  Resultado:")
+    for row in table or []:
+        log(f"    {row}")
+    for line in lines:
+        log(f"    • {line}")
+    log("")
+
+
+def latency_sum_text() -> str:
+    """'300 + 500 + 700 + 900 + 1200 ms' (latências padrão)."""
+    return " + ".join(str(v) for v in DEFAULT_LATENCIES.values()) + " ms"
+
+
 def mean(xs: list[float]) -> float:
     return statistics.fmean(xs) if xs else math.nan
 
@@ -160,7 +182,7 @@ def run(experiments: list, quick: bool = False, measure: bool = True) -> int:
             finally:
                 configure_all(client)  # devolve os mercados ao normal mesmo se algo der errado
 
-    log("\nAnalisando os CSV")
+    log("Atualizando tabelas e gráficos do relatório")
     md = ["# Resultados dos experimentos obrigatórios\n",
           f"Gerado por `experiments/` a partir dos CSV desta pasta ({time.strftime('%d/%m/%Y %H:%M')}). "
           f"Pesquisa: \"{PRODUCT}\". Latências padrão: "

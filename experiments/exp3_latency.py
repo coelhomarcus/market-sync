@@ -24,8 +24,11 @@ SCENARIOS = [
 
 def measure(client, quick: bool = False) -> None:
     rounds = 2 if quick else 5
-    c.log(f"\nExperimento 3: simulação de latência ({rounds} rodadas por cenário)")
+    c.header(3, "simulação de latência",
+             f"{len(SCENARIOS)} cenários de latência, {rounds} rodadas de cada modo por cenário.",
+             f"mais espera → mais ganho; um mercado lento limita o concorrente; timeout em {c.fmt_s(c.TIMEOUT_MS)}.")
     rows = []
+    summary = []
     for name, desc, latencies in SCENARIOS:
         c.configure_all(client, latencies)
         times = defaultdict(list)
@@ -35,8 +38,18 @@ def measure(client, quick: bool = False) -> None:
                 times[mode].append(r["tempo_total_ms"])
                 rows.append([name, desc, i + 1, mode, r["tempo_total_ms"], c.ok_count(r)])
         seq, conc = c.mean(times["sequencial"]), c.mean(times["concorrente"])
-        c.log(f"  {name:<14} sequencial {c.fmt_s(seq):>8} · concorrente {c.fmt_s(conc):>8} · speedup {c.fmt_x(seq / conc)}")
+        c.log(f"  {name:<14} {desc:<24} sequencial {c.fmt_s(seq):>8} · concorrente {c.fmt_s(conc):>8} · "
+              f"speedup {c.fmt_x(seq / conc)}")
+        summary.append((name, seq, conc))
     c.configure_all(client)
+    best = max(summary, key=lambda s: s[1] / s[2])
+    no_delay, slow, timeout = summary[0], summary[-2], summary[-1]
+    c.result(f"maior ganho: {c.fmt_x(best[1] / best[2])} no cenário '{best[0]}' (latências iguais)",
+             f"'{slow[0]}': o concorrente passa a durar o tempo do mercado lento ({c.fmt_s(slow[2])})",
+             f"'{timeout[0]}': o concorrente desiste do {c.SHORT_NAMES[TARGET]} em {c.fmt_s(timeout[2])} "
+             f"e responde com os outros 4",
+             f"'{no_delay[0]}': {c.fmt_s(no_delay[1])} × {c.fmt_s(no_delay[2])}, só milissegundos de diferença: "
+             f"sem espera de rede não há o que sobrepor")
     c.save_csv(CSV, ["cenario", "descricao", "rodada", "modo", "tempo_ms", "mercados_ok"], rows)
 
 

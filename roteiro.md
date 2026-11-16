@@ -78,6 +78,62 @@ cafe
 
 Para sair de cada cliente: `/exit`.
 
+## Experimentos
+
+Cada experimento mostra no terminal o **objetivo**, o **esperado**, as medições e um **resultado** resumido.
+Com `--quick` rodam menos rodadas (números um pouco diferentes do relatório, que usa a versão completa).
+
+**Terminal 1** (Ctrl+C no `./start.py` anterior): sistema sem o painel, para não poluir a tela
+```bash
+./start.py --quiet
+```
+
+### Experimento 1 — consulta sequencial (~10 s)
+Consulta os 5 mercados um de cada vez, numa única thread. Esperado: tempo ≈ **soma** das latências (3,60 s).
+```bash
+python3.12 -m experiments.exp1_sequential --quick
+```
+
+### Experimento 2 — consulta concorrente (~5 s)
+Uma thread por mercado, todas ao mesmo tempo. Esperado: tempo ≈ **maior** latência (1,20 s). Compara com o
+Experimento 1 e mostra o speedup (~3×).
+```bash
+python3.12 -m experiments.exp2_concurrent --quick
+```
+
+### Experimento 3 — simulação de latência (~1 min)
+Muda a latência dos mercados em 7 cenários (0, 200, 500 e 1000 ms em todos, padrão, um lento, um em timeout)
+e compara os dois modos em cada um. Mostra que o ganho cresce com a espera (até ~4,6× com latências iguais),
+que um mercado lento limita o concorrente e que o timeout de 3 s corta a espera.
+```bash
+python3.12 -m experiments.exp3_latency --quick
+```
+
+### Experimento 4 — múltiplos clientes (~20 s)
+1, 2 e 4 clientes ao mesmo tempo, cada um com sua própria conexão TCP. Mostra que o tempo de cada pesquisa
+quase não muda e a vazão cresce: o agregador atende cada cliente numa thread própria.
+```bash
+python3.12 -m experiments.exp4_multiple_clients --quick
+```
+
+### Experimento 5 — indisponibilidade de serviço (~35 s)
+Tira a SuperVila do ar em 4 cenários (todos no ar, fora antes, cai durante, cai e volta). Mostra que a pesquisa
+nunca falha: o agregador tenta de novo (0,5 s, 1 s, 2 s) e responde com os outros 4 mercados.
+```bash
+python3.12 -m experiments.exp5_unavailability --quick
+```
+
+### Todos de uma vez
+```bash
+python3.12 -m experiments --quick
+```
+(Versão completa, a do relatório: `python3.12 -m experiments`, cerca de 6 minutos.)
+
+**Depois:** os experimentos gravam por cima dos dados e gráficos do relatório; para voltar aos originais:
+```bash
+git checkout docs/relatorio/dados docs/relatorio/figuras
+```
+
 ---
 
 ## Reserva (se perguntarem)
@@ -100,15 +156,6 @@ python3.12 -m pytest -v
 **Modo raw: cada chamada TCP linha a linha** (Ctrl+C no `./start.py` antes)
 ```bash
 ./start.py --raw
-```
-
-**Um experimento rápido** (com `./start.py --quiet` no Terminal 1)
-```bash
-python3.12 -m experiments.exp2_concurrent --quick
-```
-Os experimentos gravam por cima dos dados do relatório; para voltar:
-```bash
-git checkout docs/relatorio/dados docs/relatorio/figuras
 ```
 
 **Supermercado sozinho (serviço independente)** (Ctrl+C no `./start.py` antes)

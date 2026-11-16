@@ -16,9 +16,13 @@ def measure(client, quick: bool = False) -> None:
 
     levels = [1, 2, 4] if quick else [1, 2, 4, 8, 16, 32]
     per_client = 1 if quick else 3
-    c.log(f"\nExperimento 4: múltiplos clientes ({per_client} pesquisas por cliente, latências padrão)")
+    c.header(4, "múltiplos clientes",
+             f"de {levels[0]} a {levels[-1]} clientes ao mesmo tempo, cada um com sua conexão TCP e "
+             f"{per_client} pesquisa(s).",
+             "o tempo de cada pesquisa quase não muda com mais clientes (uma thread por cliente no agregador).")
     c.configure_all(client)
     rows = []
+    stats = {}  # (modo, clientes) → (resposta média, vazão)
     for mode in c.MODES:
         for n in levels:
             barrier = threading.Barrier(n)
@@ -46,8 +50,16 @@ def measure(client, quick: bool = False) -> None:
                 t.join()
             wall_ms = (time.perf_counter() - t0) * 1000
             rows.append([mode, n, 0, 0, "", round(wall_ms, 2), "", "; ".join(failures)])  # cliente 0 = tempo total do lote
-            c.log(f"  {mode:<11} {n:>2} clientes: {n * per_client} pesquisas em {c.fmt_s(wall_ms)}"
+            answers = [r[5] for r in rows if r[0] == mode and r[1] == n and r[2] != 0]
+            stats[mode, n] = (c.mean(answers), len(answers) / (wall_ms / 1000))
+            c.log(f"  {mode:<11} {n:>2} cliente(s): {len(answers):>2} pesquisas em {c.fmt_s(wall_ms):>8} · "
+                  f"resposta média {c.fmt_s(stats[mode, n][0]):>8} · vazão {c.fmt_num(stats[mode, n][1])}/s"
                   f"{'  FALHAS: ' + '; '.join(failures) if failures else ''}")
+    first, last = levels[0], levels[-1]
+    c.result(*[f"{mode}: resposta {c.fmt_s(stats[mode, first][0])} com {first} → {c.fmt_s(stats[mode, last][0])} "
+               f"com {last} clientes; vazão {c.fmt_num(stats[mode, first][1])}/s → {c.fmt_num(stats[mode, last][1])}/s"
+               for mode in c.MODES],
+             "mais clientes não deixam cada pesquisa mais lenta: a vazão cresce junto com o número de clientes")
     c.save_csv(CSV, ["modo", "clientes", "cliente", "pesquisa", "tempo_agregador_ms", "tempo_cliente_ms",
                      "mercados_ok", "falhas"], rows)
 
